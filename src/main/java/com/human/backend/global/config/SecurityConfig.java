@@ -1,4 +1,4 @@
-package com.human.backend.config;
+package com.human.backend.global.config;
 
 import java.util.List;
 
@@ -19,7 +19,12 @@ public class SecurityConfig {
             .cors(cors -> {})
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/health").permitAll()
+                .requestMatchers(    
+                    "/swagger-ui/**",
+                    "/v3/api-docs/**",
+                    "/api/prices/**"
+
+                ).permitAll()
                 .anyRequest().authenticated()
             );
 
