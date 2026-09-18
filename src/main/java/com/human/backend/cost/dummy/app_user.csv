@@ -1,0 +1,7 @@
+﻿user_id,facility_id,email,password_hash,name,role,status,created_at,updated_at
+1,1,admin@mealfit-demo.local,$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345,관리자,ADMIN,ACTIVE,2026-09-16T07:00:00+09:00,2026-09-16T07:00:00+09:00
+2,1,manager1@mealfit-demo.local,$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345,안산 운영담당,MANAGER,ACTIVE,2026-09-16T07:00:00+09:00,2026-09-16T07:00:00+09:00
+3,1,user1@mealfit-demo.local,$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345,안산 구매담당,USER,ACTIVE,2026-09-16T07:00:00+09:00,2026-09-16T07:00:00+09:00
+4,2,manager2@mealfit-demo.local,$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345,수원 급식담당,MANAGER,ACTIVE,2026-09-16T07:00:00+09:00,2026-09-16T07:00:00+09:00
+5,3,manager3@mealfit-demo.local,$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345,성남 원가담당,MANAGER,ACTIVE,2026-09-16T07:00:00+09:00,2026-09-16T07:00:00+09:00
+6,3,user3@mealfit-demo.local,$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345,성남 운영담당,USER,ACTIVE,2026-09-16T07:00:00+09:00,2026-09-16T07:00:00+09:00

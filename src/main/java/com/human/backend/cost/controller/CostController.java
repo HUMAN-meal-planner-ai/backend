@@ -12,7 +12,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/cost")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*") // React 로컬 포트(예: 3000, 5173 등)의 CORS 차단 방지
 public class CostController {
 
     private final CostService costService;

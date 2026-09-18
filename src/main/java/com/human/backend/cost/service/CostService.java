@@ -3,8 +3,10 @@ package com.human.backend.cost.service;
 import com.human.backend.cost.dto.response.MenuCostResponse;
 import com.human.backend.cost.entity.MenuIngredientCostVo;
 import com.human.backend.cost.repository.CostRepository;
+import com.human.backend.global.exception.ApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -35,12 +37,12 @@ public class CostService {
 
         // 메뉴를 가져오는데 ID에 해당하는 거 없으면 오류 반환
         String menuName = costRepository.findMenuNameById(menuId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 메뉴 ID입니다. ID=" + menuId));
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "MENU_NOT_FOUND", "존재하지 않는 메뉴 ID입니다. ID=" + menuId));
 
         // 메뉴에 해당하는 식재료 정보 리스트를 가져오는데 없으면 오류 반환
         List<MenuIngredientCostVo> items = costRepository.findLatestIngredientsByMenuId(menuId);
         if (items.isEmpty()) {
-            throw new IllegalStateException("해당 메뉴에 등록된 식재료 구성 정보가 없습니다. ID=" + menuId);
+            throw new ApiException(HttpStatus.NOT_FOUND, "MENU_INGREDIENT_NOT_FOUND", "해당 메뉴에 등록된 식재료 구성 정보가 없습니다. ID=" + menuId);
         }
 
         // [테스트 1/로그]: 어떤 메뉴를 계산하기 시작했는지 출력 (표준 Slf4j 로깅 적용)
