@@ -39,7 +39,11 @@ public class SecurityConfig {
                 (request, response, authenticationException) ->
                     response.sendError(HttpServletResponse.SC_UNAUTHORIZED)))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/health/**").permitAll()
+                .requestMatchers("/api/health/**",
+                    "/swagger-ui/**",
+                    "/v3/api-docs/**",
+                    "/api/prices/**"
+                ).permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/email-check").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login").permitAll()
                 .anyRequest().authenticated()
