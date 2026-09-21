@@ -26,19 +26,23 @@ public class MenuCostResponse {
     private final boolean isExceeded;       // 초과 여부 (true/false)
     private final BigDecimal exceededAmount;// 초과된 금액 (0 이하면 0원)
 
+    // [COST-002/COST-009] 기준 일자 (현재 또는 미래 예측 기준일자)
+    private final LocalDate targetDate;     // 원가 산출 기준일
+
     private final List<IngredientDetail> details;
 
     /**
-     * MenuCostResponse 생성을 위한 정적 팩토리 메서드
+     * MenuCostResponse 생성을 위한 정적 팩토리 메서드 (기준일자 포함)
      * [응집도 향상]: 응답 객체 생성 책임을 DTO 내부로 캡슐화하여 서비스 코드의 가독성을 높입니다.
      */
-    public static MenuCostResponse of(Long menuId, String menuName, BigDecimal costPerPerson,
-                                      Integer mealCount, BigDecimal totalMealCost,
+    public static MenuCostResponse of(Long menuId, String menuName, LocalDate targetDate,
+                                      BigDecimal costPerPerson, Integer mealCount, BigDecimal totalMealCost,
                                       BigDecimal targetCost, boolean isExceeded, BigDecimal exceededAmount,
                                       List<IngredientDetail> details) {
         return MenuCostResponse.builder()
                 .menuId(menuId)
                 .menuName(menuName)
+                .targetDate(targetDate)
                 .costPerPerson(costPerPerson)
                 .mealCount(mealCount)
                 .totalMealCost(totalMealCost)
@@ -47,6 +51,16 @@ public class MenuCostResponse {
                 .exceededAmount(exceededAmount)
                 .details(details)
                 .build();
+    }
+
+    /**
+     * 기존 호출 호환용 정적 팩토리 메서드 (기준일자 null 처리)
+     */
+    public static MenuCostResponse of(Long menuId, String menuName, BigDecimal costPerPerson,
+                                      Integer mealCount, BigDecimal totalMealCost,
+                                      BigDecimal targetCost, boolean isExceeded, BigDecimal exceededAmount,
+                                      List<IngredientDetail> details) {
+        return of(menuId, menuName, null, costPerPerson, mealCount, totalMealCost, targetCost, isExceeded, exceededAmount, details);
     }
 
     // static 정적 중첩 클래스(원활한 관리를 위해 식재료 정보를 DTO 내부에 작성)
