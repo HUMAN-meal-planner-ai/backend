@@ -11,7 +11,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import com.human.backend.integration.priceapi.dto.KamisPriceResponseDto;
-import com.human.backend.price.config.KamisPriceTarget;
+import com.human.backend.price.entity.PriceSeries;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -23,22 +23,28 @@ public class KamisPriceApiClient {
     private final JsonMapper objectMapper;
     private final String apiKey;
     private final String apiId;
+    private final String countryCode;
+    private final String convertKgYn;
 
     public KamisPriceApiClient(
             @Value("${kamis.api.url}") String apiUrl,
             @Value("${kamis.api.key}") String apiKey,
             @Value("${kamis.api.id}") String apiId,
+            @Value("${kamis.api.country-code:1101}") String countryCode,
+            @Value("${kamis.api.convert-kg-yn:Y}") String convertKgYn,
             JsonMapper objectMapper) {
         this.restClient = RestClient.builder()
                 .baseUrl(apiUrl)
                 .build();
         this.apiKey = apiKey;
         this.apiId = apiId;
+        this.countryCode = countryCode;
+        this.convertKgYn = convertKgYn;
         this.objectMapper = objectMapper;
     }
 
     public KamisPriceResponseDto getPriceData(
-            KamisPriceTarget target, LocalDate startDate, LocalDate endDate) {
+            PriceSeries series, LocalDate startDate, LocalDate endDate) {
         // KAMIS 응답은 JSON 내용이지만 Content-Type이 text/plain이므로
         // 우선 String으로 응답을 받는다.
         String response = restClient.get()
@@ -46,12 +52,12 @@ public class KamisPriceApiClient {
                         .queryParam("action", "periodWholesaleProductList")
                         .queryParam("p_startday", startDate)
                         .queryParam("p_endday", endDate)
-                        .queryParam("p_itemcategorycode", target.itemCategoryCode())
-                        .queryParam("p_itemcode", target.itemCode())
-                        .queryParam("p_kindcode", target.kindCode())
-                        .queryParam("p_productrankcode", target.rankCode())
-                        .queryParam("p_countrycode", "1101")
-                        .queryParam("p_convert_kg_yn", "Y")
+                        .queryParam("p_itemcategorycode", series.getSourceCategoryCode())
+                        .queryParam("p_itemcode", series.getSourceItemCode())
+                        .queryParam("p_kindcode", series.getSourceKindCode())
+                        .queryParam("p_productrankcode", series.getSourceRankCode())
+                        .queryParam("p_countrycode", countryCode)
+                        .queryParam("p_convert_kg_yn", convertKgYn)
                         .queryParam("p_cert_key", apiKey)
                         .queryParam("p_cert_id", apiId)
                         .queryParam("p_returntype", "json")

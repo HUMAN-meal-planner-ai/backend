@@ -1,6 +1,8 @@
 package com.human.backend.price.dto.response;
 
 public record PriceTargetCollectionResult(
+        Long seriesId,
+        String kamisCategoryCode,
         String kamisItemCode,
         String kamisKindCode,
         String kamisKindName,
