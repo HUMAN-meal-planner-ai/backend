@@ -3,9 +3,11 @@
 
 package com.human.backend.integration.priceapi.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record KamisPriceDataDto(
 
         @JsonProperty("error_code")
@@ -15,4 +17,4 @@ public record KamisPriceDataDto(
         List<KamisPriceItemDto> items
 
 ) {
-} 
+}
