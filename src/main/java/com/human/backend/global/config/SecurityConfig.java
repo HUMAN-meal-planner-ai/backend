@@ -39,9 +39,18 @@ public class SecurityConfig {
                 (request, response, authenticationException) ->
                     response.sendError(HttpServletResponse.SC_UNAUTHORIZED)))
             .authorizeHttpRequests(auth -> auth
+                // 서버 상태 확인과 회원가입·로그인은 인증 토큰 없이 사용할 수 있는 공개 API입니다.
                 .requestMatchers("/api/health/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/email-check").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login").permitAll()
+                // /api/admin 하위 주소는 ROLE_ADMIN 권한이 있어야 Controller까지 요청이 전달됩니다.
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                // 시설 구성원 관리는 ROLE_MANAGER 전용이며 ADMIN도 자동으로 통과하지 않습니다.
+                // ADMIN은 전체 서비스, MANAGER는 자기 시설이라는 책임 범위를 분리하기 위한 설정입니다.
+                .requestMatchers("/api/manager/**").hasRole("MANAGER")
+                // 시설 생성·조회는 기존 가입 흐름에서 사용하지만, 등록된 시설의 수정은 MANAGER만 가능합니다.
+                .requestMatchers(HttpMethod.PATCH, "/api/facilities/me").hasRole("MANAGER")
+                // 위에서 별도로 지정하지 않은 나머지 API는 역할과 관계없이 로그인된 사용자에게 허용합니다.
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
