@@ -1,7 +1,10 @@
+
 package com.human.backend.menu.controller;
 
+import com.human.backend.menu.service.MenuService;
+import com.human.backend.menu.dto.response.MenuResponse;
+import org.springframework.web.bind.annotation.*;
 import java.util.List;
-
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,4 +33,16 @@ public class MenuController {
             @RequestParam(name = "slot", required = false) String slot) {
         return menuService.findMenus(slot);
     }
+    
+
+    @GetMapping("/api/menus")
+    public List<MenuResponse> getMenus() {
+        return menuService.getMenus();
+    }
+
+    // @GetMapping("/api/menus/")
+    // public List<MenuByCode> getMenuByCode() {
+    //     return menuService.getMenuByCode();
+    // }
+
 }

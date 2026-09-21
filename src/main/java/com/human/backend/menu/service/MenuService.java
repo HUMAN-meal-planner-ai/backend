@@ -9,10 +9,14 @@ import com.human.backend.cost.repository.CostRepository;
 import com.human.backend.menu.domain.MenuSlot;
 import com.human.backend.menu.dto.response.MenuResponse;
 
+import com.human.backend.menu.repository.MenuRepository;
+
 @Service
 public class MenuService {
 
     private final CostRepository costRepository;
+
+    private final MenuRepository menuRepository;
 
     public MenuService(CostRepository costRepository) {
         this.costRepository = costRepository;
@@ -26,15 +30,15 @@ public class MenuService {
         MenuSlot requestedSlot = parseSlot(slotText);
 
         return costRepository.findAllMenuIds().stream()
-            .map(this::toResponse)
-            .filter(menu -> requestedSlot == null || menu.getSlot() == requestedSlot)
-            .toList();
+                .map(this::toResponse)
+                .filter(menu -> requestedSlot == null || menu.getSlot() == requestedSlot)
+                .toList();
     }
 
     /** 메뉴 ID 하나를 메뉴 기본 정보와 식재료 상세가 포함된 응답 DTO로 변환합니다. */
     private MenuResponse toResponse(Long menuId) {
         String menuName = costRepository.findMenuNameById(menuId)
-            .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 메뉴 ID입니다. ID=" + menuId));
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 메뉴 ID입니다. ID=" + menuId));
 
         // 실제 카테고리 컬럼 연동 전까지 메뉴명으로 국·김치 여부를 임시 분류합니다.
         String mainCategory = menuName.contains("찌개") || menuName.contains("국") ? "국" : "부찬";
@@ -42,20 +46,20 @@ public class MenuService {
         MenuSlot slot = MenuSlot.from(mainCategory, subCategory);
 
         List<MenuResponse.IngredientResponse> ingredients = costRepository
-            .findLatestIngredientsByMenuId(menuId)
-            .stream()
-            .map(this::toIngredientResponse)
-            .toList();
+                .findLatestIngredientsByMenuId(menuId)
+                .stream()
+                .map(this::toIngredientResponse)
+                .toList();
 
         return new MenuResponse(menuId, "MENU-" + menuId, menuName, mainCategory, subCategory,
-            slot, null, ingredients.size(), ingredients);
+                slot, null, ingredients.size(), ingredients);
     }
 
     /** 원가 계산용 식재료 객체에서 메뉴 API에 공개할 필드만 골라 응답으로 변환합니다. */
     private MenuResponse.IngredientResponse toIngredientResponse(MenuIngredientCostVo ingredient) {
         return new MenuResponse.IngredientResponse(
-            ingredient.getIngredientId(), ingredient.getIngredientName(), ingredient.getQuantity(),
-            ingredient.getStandardUnitPrice(), ingredient.getPriceDate());
+                ingredient.getIngredientId(), ingredient.getIngredientName(), ingredient.getQuantity(),
+                ingredient.getStandardUnitPrice(), ingredient.getPriceDate());
     }
 
     /**
@@ -72,4 +76,16 @@ public class MenuService {
             throw new IllegalArgumentException("지원하지 않는 메뉴 슬롯입니다. slot=" + slotText);
         }
     }
+
+    public MenuService(MenuRepository menuRepository) {
+        this.menuRepository = menuRepository;
+    }
+
+    public List<MenuResponse> getMenus() {
+        return menuRepository.getMenus();
+    }
+
+    // public List<MenuByCode> getByCodes() {
+    // return menuRepository.getMenuByCode();
+    // }
 }
