@@ -1,14 +1,17 @@
-// 가격 관련 HTTP 요청을 처리하는 Controller.
-
 package com.human.backend.price.controller;
 
-import com.human.backend.integration.priceapi.dto.KamisPriceItemDto;
-import com.human.backend.price.service.PriceService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import java.time.LocalDate;
 
-import java.util.List;
+import com.human.backend.price.dto.response.PriceCollectionResult;
+import com.human.backend.price.service.PriceService;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/prices")
@@ -20,10 +23,15 @@ public class PriceController {
         this.priceService = priceService;
     }
 
-    // KAMIS에서 조회한 실제 시장 가격 데이터 확인용 API.
-    // 평균·평년 데이터는 제외하고 실제 품목/시장 가격만 반환한다.
-    @GetMapping("/kamis-test")
-    public List<KamisPriceItemDto> getKamisPrice() {
-        return priceService.getActualKamisPrices();
+    @PostMapping("/kamis/collect/{ingredientCode}")
+    public PriceCollectionResult collectKamisPrice(
+            @PathVariable String ingredientCode,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        try {
+            return priceService.collectOne(ingredientCode, startDate, endDate);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
     }
 }
