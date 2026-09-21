@@ -70,6 +70,22 @@ public class AppUser {
         this.facility = facility;
     }
 
+    /**
+     * 서비스 관리자가 승인한 계정의 역할을 변경할 때만 사용합니다.
+     * 필드를 public으로 열지 않고 의미 있는 메서드로 변경 지점을 제한해 권한 변경 위치를 추적하기 쉽게 합니다.
+     */
+    public void changeRole(Role role) {
+        this.role = role;
+    }
+
+    /**
+     * 권한 범위를 확인한 관리 서비스에서 계정 사용 상태를 변경할 때 사용합니다.
+     * DISABLED가 되면 JwtAuthenticationFilter의 isActive 검사에서 제외되어 기존 토큰으로도 인증되지 않습니다.
+     */
+    public void changeStatus(Status status) {
+        this.status = status;
+    }
+
     public boolean isActive() {
         return status == Status.ACTIVE;
     }
