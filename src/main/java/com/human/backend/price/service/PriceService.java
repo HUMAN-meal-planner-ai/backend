@@ -2,6 +2,7 @@ package com.human.backend.price.service;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 
 import com.human.backend.integration.priceapi.KamisPriceApiClient;
@@ -10,11 +11,16 @@ import com.human.backend.integration.priceapi.dto.KamisPriceResponseDto;
 import com.human.backend.price.config.KamisPriceCatalog;
 import com.human.backend.price.config.KamisPriceTarget;
 import com.human.backend.price.dto.response.PriceCollectionResult;
+import com.human.backend.price.dto.response.PriceTargetCollectionResult;
 import com.human.backend.price.util.KamisPriceValueParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class PriceService {
+    private static final Logger log = LoggerFactory.getLogger(PriceService.class);
+
     private final KamisPriceApiClient kamisPriceApiClient;
     private final KamisPriceCatalog priceCatalog;
     private final PriceStorageService priceStorageService;
@@ -34,10 +40,31 @@ public class PriceService {
     public PriceCollectionResult collectOne(
             String ingredientCode, LocalDate startDate, LocalDate endDate) {
         validateDateRange(startDate, endDate);
-        KamisPriceTarget target = priceCatalog.findByIngredientCode(ingredientCode)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "KAMIS 수집 설정이 없는 ingredient_code입니다: " + ingredientCode));
+        List<KamisPriceTarget> targets = priceCatalog.findAllByIngredientCode(ingredientCode);
+        if (targets.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "KAMIS collection target not found for ingredient_code: " + ingredientCode);
+        }
 
+        List<PriceTargetCollectionResult> targetResults = new ArrayList<>();
+        for (KamisPriceTarget target : targets) {
+            try {
+                targetResults.add(collectTarget(target, startDate, endDate));
+            } catch (RuntimeException exception) {
+                log.warn(
+                        "KAMIS target collection failed. ingredientCode={}, itemCode={}, "
+                                + "kindCode={}, rankCode={}, reason={}",
+                        target.ingredientCode(), target.itemCode(), target.kindCode(),
+                        target.rankCode(), exception.getMessage());
+                targetResults.add(failedResult(target, exception));
+            }
+        }
+
+        return aggregate(ingredientCode, startDate, endDate, targetResults);
+    }
+
+    private PriceTargetCollectionResult collectTarget(
+            KamisPriceTarget target, LocalDate startDate, LocalDate endDate) {
         KamisPriceResponseDto response = kamisPriceApiClient.getPriceData(target, startDate, endDate);
 
         if (response == null
@@ -47,7 +74,7 @@ public class PriceService {
             String errorCode = response == null || response.data() == null
                     ? "NO_RESPONSE"
                     : response.data().errorCode();
-            throw new IllegalStateException("KAMIS 가격 조회 실패: error_code=" + errorCode);
+            throw new IllegalStateException("KAMIS price lookup failed: error_code=" + errorCode);
         }
 
         List<KamisPriceItemDto> actualItems = response.data().items().stream()
@@ -61,11 +88,38 @@ public class PriceService {
         int outOfRangeRowsSkipped = actualItems.size() - inRangeItems.size();
 
         PriceStorageService.StoreResult stored = priceStorageService.store(target, inRangeItems);
-        return new PriceCollectionResult(
-                target.ingredientCode(), target.itemCode(), startDate, endDate,
+        return new PriceTargetCollectionResult(
+                target.itemCode(), target.kindCode(), target.kindName(),
+                target.rankCode(), target.rankName(), true, null,
                 actualItems.size(), outOfRangeRowsSkipped,
                 stored.seriesCreated(), stored.pricesInserted(),
                 stored.duplicatesSkipped(), stored.invalidRowsSkipped());
+    }
+
+    private PriceTargetCollectionResult failedResult(
+            KamisPriceTarget target, RuntimeException exception) {
+        return new PriceTargetCollectionResult(
+                target.itemCode(), target.kindCode(), target.kindName(),
+                target.rankCode(), target.rankName(), false, exception.getMessage(),
+                0, 0, 0, 0, 0, 0);
+    }
+
+    private PriceCollectionResult aggregate(
+            String ingredientCode, LocalDate startDate, LocalDate endDate,
+            List<PriceTargetCollectionResult> targetResults) {
+        int succeeded = (int) targetResults.stream()
+                .filter(PriceTargetCollectionResult::success)
+                .count();
+        return new PriceCollectionResult(
+                ingredientCode, startDate, endDate,
+                targetResults.size(), succeeded, targetResults.size() - succeeded,
+                targetResults.stream().mapToInt(PriceTargetCollectionResult::fetchedRows).sum(),
+                targetResults.stream().mapToInt(PriceTargetCollectionResult::outOfRangeRowsSkipped).sum(),
+                targetResults.stream().mapToInt(PriceTargetCollectionResult::seriesCreated).sum(),
+                targetResults.stream().mapToInt(PriceTargetCollectionResult::pricesInserted).sum(),
+                targetResults.stream().mapToInt(PriceTargetCollectionResult::duplicatesSkipped).sum(),
+                targetResults.stream().mapToInt(PriceTargetCollectionResult::invalidRowsSkipped).sum(),
+                List.copyOf(targetResults));
     }
 
     private boolean isInRequestedRange(
@@ -74,20 +128,19 @@ public class PriceService {
             LocalDate priceDate = valueParser.parseDate(item.year(), item.regDay());
             return !priceDate.isBefore(startDate) && !priceDate.isAfter(endDate);
         } catch (IllegalArgumentException exception) {
-            // 형식 오류 행은 저장 서비스에서 일관되게 집계하고 경고를 남깁니다.
             return true;
         }
     }
 
     private void validateDateRange(LocalDate startDate, LocalDate endDate) {
         if (startDate == null || endDate == null) {
-            throw new IllegalArgumentException("수집 시작일과 종료일은 필수입니다.");
+            throw new IllegalArgumentException("Collection start and end dates are required.");
         }
         if (endDate.isBefore(startDate)) {
-            throw new IllegalArgumentException("수집 종료일은 시작일보다 빠를 수 없습니다.");
+            throw new IllegalArgumentException("Collection end date cannot be before start date.");
         }
         if (ChronoUnit.DAYS.between(startDate, endDate) > 365) {
-            throw new IllegalArgumentException("KAMIS 조회 기간은 최대 1년입니다.");
+            throw new IllegalArgumentException("KAMIS lookup range cannot exceed one year.");
         }
     }
 }
