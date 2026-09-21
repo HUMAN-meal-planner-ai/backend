@@ -47,6 +47,22 @@ public class PriceService {
                     "활성 KAMIS 가격 시계열을 찾을 수 없습니다. 식재료 코드: " + ingredientCode);
         }
 
+        List<PriceTargetCollectionResult> targetResults = collectTargets(
+                seriesList, startDate, endDate);
+
+        return aggregate(ingredientCode, startDate, endDate, targetResults);
+    }
+
+    public List<PriceTargetCollectionResult> collectAll(
+            LocalDate startDate, LocalDate endDate) {
+        validateDateRange(startDate, endDate);
+        List<PriceSeries> seriesList = priceSeriesRepository
+                .findAllActiveKamisCollectionTargets();
+        return collectTargets(seriesList, startDate, endDate);
+    }
+
+    private List<PriceTargetCollectionResult> collectTargets(
+            List<PriceSeries> seriesList, LocalDate startDate, LocalDate endDate) {
         List<PriceTargetCollectionResult> targetResults = new ArrayList<>();
         for (PriceSeries series : seriesList) {
             try {
@@ -60,8 +76,7 @@ public class PriceService {
                 targetResults.add(failedResult(series, exception));
             }
         }
-
-        return aggregate(ingredientCode, startDate, endDate, targetResults);
+        return List.copyOf(targetResults);
     }
 
     private PriceTargetCollectionResult collectSeries(

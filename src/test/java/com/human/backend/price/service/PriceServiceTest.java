@@ -20,6 +20,7 @@ import com.human.backend.integration.priceapi.dto.KamisPriceDataDto;
 import com.human.backend.integration.priceapi.dto.KamisPriceItemDto;
 import com.human.backend.integration.priceapi.dto.KamisPriceResponseDto;
 import com.human.backend.price.dto.response.PriceCollectionResult;
+import com.human.backend.price.dto.response.PriceTargetCollectionResult;
 import com.human.backend.price.entity.PriceSeries;
 import com.human.backend.price.repository.PriceSeriesRepository;
 import com.human.backend.price.util.KamisPriceValueParser;
@@ -120,6 +121,43 @@ class PriceServiceTest {
         assertEquals(1, result.targetsFailed());
         assertFalse(result.targets().get(1).success());
         assertEquals("일시적인 KAMIS 오류", result.targets().get(1).errorMessage());
+    }
+
+    @Test
+    void collectsAllActiveKamisSeriesAndContinuesAfterFailure() {
+        KamisPriceApiClient client = mock(KamisPriceApiClient.class);
+        PriceSeriesRepository repository = mock(PriceSeriesRepository.class);
+        PriceStorageService storage = mock(PriceStorageService.class);
+        LocalDate date = LocalDate.of(2026, 9, 15);
+        PriceSeries first = series(1L, "00", "국산(1kg)", "04", "상품");
+        PriceSeries failed = series(2L, "02", "중국(1kg)", "05", "중품");
+        PriceSeries last = series(3L, "03", "페루(1kg)", "05", "중품");
+        String firstVariety = first.getVariety();
+        String lastVariety = last.getVariety();
+
+        when(repository.findAllActiveKamisCollectionTargets())
+                .thenReturn(List.of(first, failed, last));
+        when(client.getPriceData(first, date, date))
+                .thenReturn(response(item(firstVariety, "09/15")));
+        when(client.getPriceData(failed, date, date))
+                .thenThrow(new IllegalStateException("일시적인 KAMIS 오류"));
+        when(client.getPriceData(last, date, date))
+                .thenReturn(response(item(lastVariety, "09/15")));
+        when(storage.store(eq(first), anyList()))
+                .thenReturn(new PriceStorageService.StoreResult(0, 1, 0, 0));
+        when(storage.store(eq(last), anyList()))
+                .thenReturn(new PriceStorageService.StoreResult(0, 1, 0, 0));
+
+        List<PriceTargetCollectionResult> results = service(client, repository, storage)
+                .collectAll(date, date);
+
+        verify(repository).findAllActiveKamisCollectionTargets();
+        verify(client).getPriceData(last, date, date);
+        verify(storage).store(eq(last), anyList());
+        assertEquals(3, results.size());
+        assertEquals(2, results.stream().filter(PriceTargetCollectionResult::success).count());
+        assertFalse(results.get(1).success());
+        assertEquals("일시적인 KAMIS 오류", results.get(1).errorMessage());
     }
 
     private PriceService service(
