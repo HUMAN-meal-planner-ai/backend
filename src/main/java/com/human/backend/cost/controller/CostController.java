@@ -5,6 +5,7 @@ import com.human.backend.cost.dto.response.BudgetUsageRateResponse;
 import com.human.backend.cost.dto.response.CostDriverResponse;
 import com.human.backend.cost.dto.response.MenuCostComparisonResponse;
 import com.human.backend.cost.dto.response.MenuCostResponse;
+import com.human.backend.cost.dto.response.MenuRiskResponse;
 import com.human.backend.cost.dto.response.MonthlyMealPlanCostResponse;
 import com.human.backend.cost.dto.response.WeeklyMealPlanCostResponse;
 import com.human.backend.cost.service.CostService;
@@ -17,6 +18,14 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * 원가 및 예산 분석 REST Controller
+ * 담당 요구사항:
+ * - MENU-008: 현재 및 예측 단가를 기준으로 메뉴의 1인분 예상 원가를 표시한다.
+ * - MENU-009: 메뉴 구성 주요 식재료의 가격 위험을 종합해 메뉴 위험도를 표시한다.
+ * - COST-001 ~ COST-006: 메뉴 원가 계산, 비교 및 상승 기여 식재료 분석
+ * - COST-012 ~ COST-014: 주간/월간 식단 식재료비 및 예산 사용률 분석
+ */
 @RestController
 @RequestMapping("/api/cost")
 public class CostController {
@@ -27,8 +36,8 @@ public class CostController {
         this.costService = costService;
     }
 
-    // 1. 메뉴별 1인분 기준 원가 전체 목록 조회
-    // 예시 호출: GET /api/cost/menus?mealCount=50&targetCost=3000
+    // 1. 메뉴별 1인분 기준 원가 전체 목록 조회 (MENU-008, COST-003)
+    // 예시 호출: GET /api/cost/menus?mealCount=1&targetCost=3000
     @GetMapping("/menus")
     public ResponseEntity<List<MenuCostResponse>> getAllMenuCosts(
             @RequestParam(name = "mealCount", defaultValue = "1") Integer mealCount,
@@ -113,7 +122,26 @@ public class CostController {
         return ResponseEntity.ok(responses);
     }
 
-    // 9. 이번 주·다음 주 예상 비용 및 월 잔여 예산 기준 초과 위험 분석 API
+    // 9. 메뉴 구성 주요 식재료 가격 위험 종합 메뉴 위험도 단건 조회 API (MENU-009)
+    // 예시 호출: GET /api/cost/menus/101/risk?targetDate=2026-09-20
+    @GetMapping("/menus/{menuId}/risk")
+    public ResponseEntity<MenuRiskResponse> getMenuRisk(
+            @PathVariable("menuId") Long menuId,
+            @RequestParam(name = "targetDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate targetDate) {
+        MenuRiskResponse response = costService.evaluateMenuRisk(menuId, targetDate);
+        return ResponseEntity.ok(response);
+    }
+
+    // 10. 전체 메뉴 대상 식재료 가격 위험 종합 메뉴 위험도 일괄 목록 조회 API (MENU-009)
+    // 예시 호출: GET /api/cost/menus/risk?targetDate=2026-09-20
+    @GetMapping("/menus/risk")
+    public ResponseEntity<List<MenuRiskResponse>> getAllMenuRisks(
+            @RequestParam(name = "targetDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate targetDate) {
+        List<MenuRiskResponse> responses = costService.evaluateAllMenuRisks(targetDate);
+        return ResponseEntity.ok(responses);
+    }
+
+    // 11. 이번 주·다음 주 예상 비용 및 월 잔여 예산 기준 초과 위험 분석 API
     // 예시 호출: GET /api/cost/budget-risk?facilityId=1&baseDate=2026-09-17
     @GetMapping("/budget-risk")
     public ResponseEntity<BudgetRiskResponse> getBudgetRisk(
