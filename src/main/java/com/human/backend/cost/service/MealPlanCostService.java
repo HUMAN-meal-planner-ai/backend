@@ -184,16 +184,5 @@ public class MealPlanCostService {
                 .weeklyCosts(weeklyCosts)
                 .build();
     }
-
-    /**
-     * 식단 목록의 총 예상 비용 합산
-     */
-    public BigDecimal calculateTotalMealPlansCost(List<MealPlanCostVo> plans) {
-        if (plans == null || plans.isEmpty()) {
-            return BigDecimal.ZERO;
-        }
-        return plans.stream()
-                .map(MealPlanCostVo::calculateTotalCost)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
 }
+

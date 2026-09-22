@@ -202,15 +202,6 @@ public class BudgetAnalysisService {
                 .build();
     }
 
-    private BigDecimal calculateTotalMealPlansCost(List<MealPlanCostVo> plans) {
-        if (plans == null || plans.isEmpty()) {
-            return BigDecimal.ZERO;
-        }
-        return plans.stream()
-                .map(MealPlanCostVo::calculateTotalCost)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
     private String determineRiskLevel(boolean isRisk, BigDecimal twoWeeksCost, BigDecimal remainingBudget) {
         if (isRisk) {
             return "WARNING";

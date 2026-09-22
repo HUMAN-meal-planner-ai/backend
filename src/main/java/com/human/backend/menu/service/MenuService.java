@@ -15,7 +15,6 @@ import com.human.backend.menu.repository.MenuRepository;
 public class MenuService {
 
     private final CostRepository costRepository;
-
     private final MenuRepository menuRepository;
 
     public MenuService(CostRepository costRepository, MenuRepository menuRepository) {
