@@ -15,11 +15,11 @@ import com.human.backend.menu.repository.MenuRepository;
 public class MenuService {
 
     private final CostRepository costRepository;
-
     private final MenuRepository menuRepository;
 
-    public MenuService(CostRepository costRepository) {
+    public MenuService(CostRepository costRepository,MenuRepository menuRepository) {
         this.costRepository = costRepository;
+        this.menuRepository = menuRepository;
     }
 
     /**
@@ -77,15 +77,8 @@ public class MenuService {
         }
     }
 
-    public MenuService(MenuRepository menuRepository) {
-        this.menuRepository = menuRepository;
-    }
-
     public List<MenuResponse> getMenus() {
         return menuRepository.getMenus();
     }
 
-    // public List<MenuByCode> getByCodes() {
-    // return menuRepository.getMenuByCode();
-    // }
 }
