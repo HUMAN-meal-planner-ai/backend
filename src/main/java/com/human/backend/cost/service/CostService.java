@@ -1,79 +1,125 @@
 package com.human.backend.cost.service;
 
+import com.human.backend.cost.dto.response.BudgetRiskResponse;
+import com.human.backend.cost.dto.response.BudgetUsageRateResponse;
+import com.human.backend.cost.dto.response.CostDriverResponse;
+import com.human.backend.cost.dto.response.MenuCostComparisonResponse;
 import com.human.backend.cost.dto.response.MenuCostResponse;
-import com.human.backend.cost.entity.MenuIngredientCostVo;
-import com.human.backend.cost.repository.CostRepository;
+import com.human.backend.cost.dto.response.MonthlyMealPlanCostResponse;
+import com.human.backend.cost.dto.response.WeeklyMealPlanCostResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
+import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * 원가 및 예산 분석 통합 서비스 파사드 (Facade)
+ * 도메인별로 분리된 하위 서비스(MenuCostService, MealPlanCostService, BudgetAnalysisService)에
+ * 작업을 위임하여 단일 창구 역할을 제공합니다.
+ */
 @Service
+@RequiredArgsConstructor
 public class CostService {
 
-    private final CostRepository costRepository;
+    private final MenuCostService menuCostService;
+    private final MealPlanCostService mealPlanCostService;
+    private final BudgetAnalysisService budgetAnalysisService;
 
-    // 서비스 객체에 필드변수로 레포지토리 저장
-    public CostService(CostRepository costRepository) {
-        this.costRepository = costRepository;
+    // ==========================================
+    // 1. 메뉴 원가 및 분석 (MenuCostService 위임)
+    // ==========================================
+
+    /**
+     * 최신 식재료 가격과 사용 중량으로 메뉴 현재 원가 계산 (COST-001, COST-004, COST-009)
+     */
+    public MenuCostResponse calculateCurrentMenuCost(Long menuId, Integer mealCount, BigDecimal targetCost) {
+        return menuCostService.calculateCurrentMenuCost(menuId, mealCount, targetCost);
     }
 
     /**
-     * 최신 식재료 가격과 사용 중량으로 메뉴 현재 원가를 계산한다.
+     * 등록된 모든 메뉴별 1인분 기준 현재 원가 일괄 산출 (COST-003)
      */
+    public List<MenuCostResponse> calculateAllMenuCosts(Integer mealCount, BigDecimal targetCost) {
+        return menuCostService.calculateAllMenuCosts(mealCount, targetCost);
+    }
 
-    // 아까 생성한 response DTO를 반환하는 계산 메서드 생성
-    public MenuCostResponse calculateCurrentMenuCost(Long menuId) {
+    /**
+     * 미래 식재료 예측가격과 사용 중량으로 메뉴 미래 원가 계산 (COST-002, COST-004, COST-009)
+     */
+    public MenuCostResponse calculateFutureMenuCost(Long menuId, LocalDate targetDate, Integer mealCount, BigDecimal targetCost) {
+        return menuCostService.calculateFutureMenuCost(menuId, targetDate, mealCount, targetCost);
+    }
 
-        // 메뉴를 가져오는데 ID에 해당하는 거 없으면 오류 반환
-        String menuName = costRepository.findMenuNameById(menuId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 메뉴 ID입니다. ID=" + menuId));
+    /**
+     * 모든 메뉴 대상 특정 미래 일자 기준 원가 일괄 산출 (COST-002)
+     */
+    public List<MenuCostResponse> calculateAllFutureMenuCosts(LocalDate targetDate, Integer mealCount, BigDecimal targetCost) {
+        return menuCostService.calculateAllFutureMenuCosts(targetDate, mealCount, targetCost);
+    }
 
-        // 메뉴에 해당하는 식재료 정보 리스트를 가져오는데 없으면 오류 반환
-        List<MenuIngredientCostVo> items = costRepository.findLatestIngredientsByMenuId(menuId);
-        if (items.isEmpty()) {
-            throw new IllegalStateException("해당 메뉴에 등록된 식재료 구성 정보가 없습니다. ID=" + menuId);
-        }
+    /**
+     * 현재 메뉴 원가와 미래 예상 원가 비교 및 상승률 분석 (COST-005)
+     */
+    public MenuCostComparisonResponse compareMenuCost(Long menuId, LocalDate targetDate, Integer mealCount) {
+        return menuCostService.compareMenuCost(menuId, targetDate, mealCount);
+    }
 
-        // [테스트 1] 어떤 메뉴를 계산하기 시작했는지 출력
-        System.out.println("==================================================");
-        System.out.println(">> [원가 계산 시작] 메뉴 ID: " + menuId + " / 메뉴명: " + menuName);
-        System.out.println(">> 식재료 품목 수: " + items.size() + "개");
-        System.out.println("--------------------------------------------------");
+    /**
+     * 모든 메뉴 대상 현재 원가 vs 미래 예상 원가 비교 일괄 목록 산출 (COST-005)
+     */
+    public List<MenuCostComparisonResponse> compareAllMenuCosts(LocalDate targetDate, Integer mealCount) {
+        return menuCostService.compareAllMenuCosts(targetDate, mealCount);
+    }
 
-        BigDecimal totalCost = BigDecimal.ZERO; // 메뉴 원가를 담을 변수
-        List<MenuCostResponse.IngredientDetail> detailList = new ArrayList<>(); // 식재료 정보 저장하는 리스트
+    /**
+     * 메뉴 원가 상승에 가장 크게 기여하는 식재료(Cost Driver) 식별 (COST-006)
+     */
+    public CostDriverResponse identifyCostDrivers(Long menuId, LocalDate targetDate) {
+        return menuCostService.identifyCostDrivers(menuId, targetDate);
+    }
 
-        // 미리 가져온 식재료 정보리스트 순회
-        for (MenuIngredientCostVo item : items) {
-            BigDecimal quantity = item.getQuantity();
-            BigDecimal unitPrice = item.getStandardUnitPrice();
+    /**
+     * 모든 메뉴 대상 원가 상승 기여 식재료 식별 일괄 목록 산출 (COST-006)
+     */
+    public List<CostDriverResponse> identifyAllCostDrivers(LocalDate targetDate) {
+        return menuCostService.identifyAllCostDrivers(targetDate);
+    }
 
-            // 원가 = 사용량(g) * 최신 기준단위 가격(원/g)
-            BigDecimal lineCost = quantity.multiply(unitPrice).setScale(0, RoundingMode.HALF_UP);
-            totalCost = totalCost.add(lineCost);
+    // ==========================================
+    // 2. 식단 식재료비 계산 (MealPlanCostService 위임)
+    // ==========================================
 
-            // [테스트 2] 개별 식재료별 중량, 단가, 곱셈 결과 및 누적 합계 출력
-            System.out.println(String.format(
-                    "   - [%s] 사용량: %sg | 단가: %s원/g | 재료원가: %s원 (누적: %s원)",
-                    item.getIngredientName(), quantity, unitPrice, lineCost, totalCost));
+    /**
+     * 선택 주차 7일 식단의 최신·예측 단가 기준 총 예상 식재료비 계산 (COST-012)
+     */
+    public WeeklyMealPlanCostResponse calculateWeeklyMealPlanCost(Long facilityId, LocalDate startDate) {
+        return mealPlanCostService.calculateWeeklyMealPlanCost(facilityId, startDate);
+    }
 
-            detailList.add(new MenuCostResponse.IngredientDetail(
-                    item.getIngredientId(),
-                    item.getIngredientName(),
-                    quantity,
-                    unitPrice,
-                    lineCost,
-                    item.getPriceDate()));
-        }
+    /**
+     * 주별 예상 비용을 합산하여 월간 총 예상 식재료비 계산 (COST-013)
+     */
+    public MonthlyMealPlanCostResponse calculateMonthlyMealPlanCost(Long facilityId, String yearMonthStr) {
+        return mealPlanCostService.calculateMonthlyMealPlanCost(facilityId, yearMonthStr);
+    }
 
-        // [테스트 3] 최종 반환 전 1인분 총 원가 결과 출력
-        System.out.println("--------------------------------------------------");
-        System.out.println(">> [최종 계산 완료] 1인분 총 원가: " + totalCost + "원");
-        System.out.println("==================================================");
+    // ==========================================
+    // 3. 예산 및 위험 분석 (BudgetAnalysisService 위임)
+    // ==========================================
 
-        return new MenuCostResponse(menuId, menuName, totalCost, detailList); // 메뉴ID, 메뉴이름, 메뉴 원가, 메뉴 식재료 정보를 담아서 리스폰스 반환
+    /**
+     * 이번 주·다음 주 예상 비용과 월 잔여 예산 기준 예산 초과 위험 분석 (BUDG-002)
+     */
+    public BudgetRiskResponse evaluateBudgetRisk(Long facilityId, LocalDate baseDate) {
+        return budgetAnalysisService.evaluateBudgetRisk(facilityId, baseDate);
+    }
+
+    /**
+     * 설정된 예산 대비 예상 사용액과 사용률 분석 (COST-014)
+     */
+    public BudgetUsageRateResponse evaluateBudgetUsage(Long facilityId, String yearMonthStr, LocalDate baseDate) {
+        return budgetAnalysisService.evaluateBudgetUsage(facilityId, yearMonthStr, baseDate);
     }
 }

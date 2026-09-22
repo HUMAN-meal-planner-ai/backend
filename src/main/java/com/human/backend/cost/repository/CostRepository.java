@@ -1,51 +1,53 @@
 package com.human.backend.cost.repository;
 
-
+import com.human.backend.cost.entity.FacilityBudgetVo;
+import com.human.backend.cost.entity.MealPlanCostVo;
 import com.human.backend.cost.entity.MenuIngredientCostVo;
-import org.springframework.stereotype.Repository;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.*;
+import java.time.YearMonth;
+import java.util.List;
+import java.util.Optional;
 
-// 값을 불러오는 Repository
-@Repository
-public class CostRepository {
+/**
+ * 원가 및 예산 분석에 필요한 데이터를 조회하는 Repository 인터페이스
+ * [결합도 완화]: 인터페이스를 통해 역할(규격)을 정의함으로써, 
+ * 향후 InMemory 더미 데이터에서 JPA/MyBatis/PostgreSQL 등으로 데이터 소스를 교체하더라도
+ * Service 계층의 코드 변경이 발생하지 않도록 의존성을 역전(DIP)시킵니다.
+ */
+public interface CostRepository {
 
-    // 맵 객체 생성(더미 데이터용)
-    private static final Map<Long, String> MENU_MAP = new HashMap<>();
-    private static final Map<Long, List<MenuIngredientCostVo>> MENU_INGREDIENTS_MAP = new HashMap<>();
+    /**
+     * 등록된 모든 메뉴 ID 목록 조회 (메뉴별 일괄 계산용)
+     */
+    List<Long> findAllMenuIds();
 
-    // 더미 데이터 생성
-    static {
-        // [1] menu.csv 더미
-        MENU_MAP.put(101L, "돼지고기 김치찌개");
-        MENU_MAP.put(102L, "시금치 된장국");
+    /**
+     * 메뉴 ID로 메뉴명 조회
+     * (아이디로 메뉴 찾기: Optional을 사용하여 값이 없을 경우에 대한 처리를 호출자에게 위임)
+     */
+    Optional<String> findMenuNameById(Long menuId);
 
-        // [2] menu_ingredient.csv + ingredient_price.csv 결합 더미 (최신 price_date 단가 반영)
-        // 101번 메뉴: 김치찌개 (돼지고기 100g, 배추김치 150g, 두부 50g)
-        MENU_INGREDIENTS_MAP.put(101L, List.of(
-            new MenuIngredientCostVo(1L, "돼지고기(전지)", new BigDecimal("100"), new BigDecimal("14.5"), LocalDate.of(2026, 9, 15)),
-            new MenuIngredientCostVo(2L, "배추김치", new BigDecimal("150"), new BigDecimal("5.8"), LocalDate.of(2026, 9, 15)),
-            new MenuIngredientCostVo(3L, "두부", new BigDecimal("50"), new BigDecimal("7.2"), LocalDate.of(2026, 9, 15))
-        ));
+    /**
+     * 메뉴 ID에 해당하는 최신 식재료 구성 및 단가 정보 목록 조회
+     * (데이터가 없으면 빈 리스트 반환)
+     */
+    List<MenuIngredientCostVo> findLatestIngredientsByMenuId(Long menuId);
 
-        // 102번 메뉴: 시금치 된장국 (시금치 70g, 재래된장 30g, 대파 20g)
-        MENU_INGREDIENTS_MAP.put(102L, List.of(
-            new MenuIngredientCostVo(4L, "시금치", new BigDecimal("70"), new BigDecimal("21.0"), LocalDate.of(2026, 9, 15)),
-            new MenuIngredientCostVo(5L, "재래된장", new BigDecimal("30"), new BigDecimal("9.5"), LocalDate.of(2026, 9, 15)),
-            new MenuIngredientCostVo(6L, "대파", new BigDecimal("20"), new BigDecimal("8.0"), LocalDate.of(2026, 9, 15))
-        ));
-    }
+    /**
+     * 메뉴 ID 및 특정 미래 일자에 해당하는 예측 식재료 구성 및 단가 정보 목록 조회 (COST-002)
+     * (예측 데이터가 없을 경우 최신 시세를 대체 적용하여 반환)
+     */
+    List<MenuIngredientCostVo> findPredictedIngredientsByMenuId(Long menuId, LocalDate targetDate);
 
-    // 아이디로 메뉴 찾기(Optional, 스트링 값이 Null이 아니면 쓰고 Null이면 기본값이나 오류를 던지도록 강제한다.)
-    // 메서드에 메뉴ID 넣고 호출하면 메뉴ID에 해당하면 메뉴 매퍼를 호출
-    public Optional<String> findMenuNameById(Long menuId) {
-        return Optional.ofNullable(MENU_MAP.get(menuId));
-    }
+    /**
+     * 시설의 특정 연월 예산 정보 조회
+     */
+    Optional<FacilityBudgetVo> findFacilityBudget(Long facilityId, YearMonth month);
 
-    // getOrDefault:: 메뉴ID 값에 해당하는 값을 반환하되, 없다면 Collections에 있는 emptyList()를 반환한다
-    public List<MenuIngredientCostVo> findLatestIngredientsByMenuId(Long menuId) {
-        return MENU_INGREDIENTS_MAP.getOrDefault(menuId, Collections.emptyList());
-    }
+    /**
+     * 시설의 특정 기간 내 식단 계획 및 예상 단가 목록 조회
+     */
+    List<MealPlanCostVo> findMealPlansByFacilityAndDateRange(Long facilityId, LocalDate startDate, LocalDate endDate);
 }
+

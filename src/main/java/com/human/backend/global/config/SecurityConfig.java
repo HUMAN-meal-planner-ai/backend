@@ -39,8 +39,13 @@ public class SecurityConfig {
                 (request, response, authenticationException) ->
                     response.sendError(HttpServletResponse.SC_UNAUTHORIZED)))
             .authorizeHttpRequests(auth -> auth
-                // 서버 상태 확인과 회원가입·로그인은 인증 토큰 없이 사용할 수 있는 공개 API입니다.
-                .requestMatchers("/api/health/**").permitAll()
+                // 상태 확인, Swagger 문서, 공개 가격 조회는 로그인 토큰 없이 사용할 수 있습니다.
+                .requestMatchers("/api/health/**",
+                    "/swagger-ui/**",
+                    "/v3/api-docs/**",
+                    "/api/prices/**"
+                ).permitAll()
+                // 이메일 중복 확인과 회원가입·로그인도 인증 전에 사용하는 공개 API입니다.
                 .requestMatchers(HttpMethod.GET, "/api/auth/email-check").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login").permitAll()
                 // /api/admin 하위 주소는 ROLE_ADMIN 권한이 있어야 Controller까지 요청이 전달됩니다.
