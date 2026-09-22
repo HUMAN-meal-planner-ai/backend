@@ -25,16 +25,19 @@ public class PriceService {
     private final PriceSeriesRepository priceSeriesRepository;
     private final PriceStorageService priceStorageService;
     private final KamisPriceValueParser valueParser;
+    private final KamisRegionalPriceSelector regionalPriceSelector;
 
     public PriceService(
             KamisPriceApiClient kamisPriceApiClient,
             PriceSeriesRepository priceSeriesRepository,
             PriceStorageService priceStorageService,
-            KamisPriceValueParser valueParser) {
+            KamisPriceValueParser valueParser,
+            KamisRegionalPriceSelector regionalPriceSelector) {
         this.kamisPriceApiClient = kamisPriceApiClient;
         this.priceSeriesRepository = priceSeriesRepository;
         this.priceStorageService = priceStorageService;
         this.valueParser = valueParser;
+        this.regionalPriceSelector = regionalPriceSelector;
     }
 
     public PriceCollectionResult collectOne(
@@ -97,18 +100,19 @@ public class PriceService {
                 .filter(item -> item.itemName() != null)
                 .filter(item -> item.marketName() != null)
                 .toList();
+        List<KamisPriceItemDto> regionalItems = regionalPriceSelector.select(series, actualItems);
 
-        List<KamisPriceItemDto> inRangeItems = actualItems.stream()
+        List<KamisPriceItemDto> inRangeItems = regionalItems.stream()
                 .filter(item -> isInRequestedRange(item, startDate, endDate))
                 .toList();
-        int outOfRangeRowsSkipped = actualItems.size() - inRangeItems.size();
+        int outOfRangeRowsSkipped = regionalItems.size() - inRangeItems.size();
 
         PriceStorageService.StoreResult stored = priceStorageService.store(series, inRangeItems);
         return new PriceTargetCollectionResult(
                 series.getId(), series.getSourceCategoryCode(), series.getSourceItemCode(),
                 series.getSourceKindCode(), series.getVariety(),
                 series.getSourceRankCode(), series.getGrade(), true, null,
-                actualItems.size(), outOfRangeRowsSkipped,
+                regionalItems.size(), outOfRangeRowsSkipped,
                 stored.seriesCreated(), stored.pricesInserted(),
                 stored.duplicatesSkipped(), stored.invalidRowsSkipped());
     }

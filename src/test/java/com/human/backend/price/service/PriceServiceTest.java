@@ -163,7 +163,9 @@ class PriceServiceTest {
     private PriceService service(
             KamisPriceApiClient client, PriceSeriesRepository repository,
             PriceStorageService storage) {
-        return new PriceService(client, repository, storage, new KamisPriceValueParser());
+        KamisPriceValueParser parser = new KamisPriceValueParser();
+        return new PriceService(
+                client, repository, storage, parser, new KamisRegionalPriceSelector(parser));
     }
 
     private PriceSeries series(
@@ -179,6 +181,7 @@ class PriceServiceTest {
         when(series.getSourceRankCode()).thenReturn(rankCode);
         when(series.getVariety()).thenReturn(variety);
         when(series.getGrade()).thenReturn(grade);
+        when(series.getRegion()).thenReturn("서울");
         return series;
     }
 
