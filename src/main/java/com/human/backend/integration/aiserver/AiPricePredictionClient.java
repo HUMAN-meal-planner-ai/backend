@@ -16,7 +16,9 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import com.human.backend.prediction.dto.request.AiPricePredictionRequest;
+import com.human.backend.prediction.dto.request.AiWeeklyPricePredictionRequest;
 import com.human.backend.prediction.dto.response.AiPricePredictionBatchResponse;
+import com.human.backend.prediction.dto.response.AiWeeklyPricePredictionBatchResponse;
 
 @Component
 public class AiPricePredictionClient {
@@ -37,20 +39,27 @@ public class AiPricePredictionClient {
     }
 
     public AiPricePredictionBatchResponse predictNext(List<Long> seriesIds) {
-        return predict("/api/v1/price-predictions/next", seriesIds);
+        return predict(
+                "/api/v1/price-predictions/next",
+                new AiPricePredictionRequest(List.copyOf(seriesIds)),
+                AiPricePredictionBatchResponse.class);
     }
 
-    public AiPricePredictionBatchResponse predictSevenDays(List<Long> seriesIds) {
-        return predict("/api/v1/price-predictions/7-days", seriesIds);
+    public AiWeeklyPricePredictionBatchResponse predictSevenDays(
+            AiWeeklyPricePredictionRequest request) {
+        return predict(
+                "/api/v1/price-predictions/7-days",
+                request,
+                AiWeeklyPricePredictionBatchResponse.class);
     }
 
-    private AiPricePredictionBatchResponse predict(String uri, List<Long> seriesIds) {
+    private <T> T predict(String uri, Object request, Class<T> responseType) {
         try {
             return restClient.post()
                     .uri(uri)
-                    .body(new AiPricePredictionRequest(List.copyOf(seriesIds)))
+                    .body(request)
                     .retrieve()
-                    .body(AiPricePredictionBatchResponse.class);
+                    .body(responseType);
         } catch (HttpClientErrorException.NotFound exception) {
             throw failure(AiPricePredictionClientException.FailureType.NOT_FOUND,
                     "AI 가격예측 서버에서 요청한 시계열의 실측 가격을 찾지 못했습니다.", exception);

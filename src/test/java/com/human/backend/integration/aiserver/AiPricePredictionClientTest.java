@@ -4,15 +4,21 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import com.human.backend.prediction.dto.request.AiWeeklyPriceHistoryPoint;
+import com.human.backend.prediction.dto.request.AiWeeklyPricePredictionRequest;
+import com.human.backend.prediction.dto.request.AiWeeklyPriceSeriesRequest;
 import com.human.backend.prediction.dto.response.AiPricePredictionBatchResponse;
+import com.human.backend.prediction.dto.response.AiWeeklyPricePredictionBatchResponse;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
@@ -48,14 +54,29 @@ class AiPricePredictionClientTest {
         startServer("/api/v1/price-predictions/7-days", 200, """
                 {"predictions":[{"seriesId":3,"baseDate":"2026-09-18",
                 "targetDate":"2026-09-25","basePrice":"0.791000",
-                "predictedPrice":"0.791000","standardUnit":"g",
-                "modelName":"lag_1_baseline","modelVersion":"lag_1_baseline_v1",
+                "predictedPrice":"0.812000","predictedMaxPrice":"0.844000",
+                "standardUnit":"g","ridgeScore":0.73,"volatilityScore":0.81,
+                "combinedRiskScore":0.77,"modelName":"weekly_mean_ridge",
+                "modelVersion":"weekly_ridge_v1",
                 "generatedAt":"2026-09-22T04:00:00Z"}]}
                 """);
 
-        AiPricePredictionBatchResponse response = client().predictSevenDays(List.of(3L));
+        AiWeeklyPricePredictionRequest request = new AiWeeklyPricePredictionRequest(List.of(
+                new AiWeeklyPriceSeriesRequest(
+                        3L,
+                        "F00993",
+                        "g",
+                        List.of(
+                                new AiWeeklyPriceHistoryPoint(
+                                        LocalDate.of(2026, 9, 17),
+                                        new BigDecimal("0.780000")),
+                                new AiWeeklyPriceHistoryPoint(
+                                        LocalDate.of(2026, 9, 18),
+                                        new BigDecimal("0.791000"))))));
+        AiWeeklyPricePredictionBatchResponse response = client().predictSevenDays(request);
 
         assertEquals("2026-09-25", response.predictions().get(0).targetDate().toString());
+        assertEquals(0.77, response.predictions().get(0).combinedRiskScore());
     }
 
     @Test
