@@ -1,0 +1,4 @@
+﻿facility_id,name,facility_type,address,breakfast_meal_count,lunch_meal_count,dinner_meal_count,target_food_cost,created_at,updated_at
+1,밀핏 안산 산업단지점,CORPORATE,경기도 안산시 단원구 샘플로 100,80,520,180,3800.0,2026-09-16T07:00:00+09:00,2026-09-16T07:00:00+09:00
+2,밀핏 수원 미래고,SCHOOL,경기도 수원시 영통구 샘플로 20,0,680,0,3500.0,2026-09-16T07:00:00+09:00,2026-09-16T07:00:00+09:00
+3,밀핏 성남 한빛병원,HOSPITAL,경기도 성남시 분당구 샘플로 55,240,360,300,4200.0,2026-09-16T07:00:00+09:00,2026-09-16T07:00:00+09:00
