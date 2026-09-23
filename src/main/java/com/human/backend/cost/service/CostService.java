@@ -16,9 +16,36 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * 원가 및 예산 분석 통합 서비스 파사드 (Facade)
- * 도메인별로 분리된 하위 서비스(MenuCostService, MenuRiskService, MealPlanCostService, BudgetAnalysisService)에
- * 작업을 위임하여 단일 창구 역할을 제공합니다.
+ * [원가 및 예산 분석 통합 서비스 파사드 (Facade)]
+ *
+ * ■ 구조 및 설계 의도:
+ *   - 단일 책임 원칙(SRP)에 따라 원가 계산, 비교/위험 분석, 식단 비용, 예산 분석으로 나뉜
+ *     4개의 전문 도메인 서비스에 작업을 위임(Delegation)합니다.
+ *   - Controller에는 단일 진입점(Facade)을 제공하여 비즈니스 계층의 캡슐화 및 응집도를 극대화합니다.
+ *
+ * ■ 위임 구조 및 도메인 책임 매핑:
+ *   [CostService]
+ *       ├── [MenuCostService]
+ *       │     - calculateCurrentMenuCost()  : 단건 메뉴 현재 원가 (COST-001, COST-004, COST-009)
+ *       │     - calculateAllMenuCosts()      : 전체 메뉴 현재 1인분 원가 (COST-003)
+ *       │     - calculateFutureMenuCost()   : 단건 메뉴 미래 예측 원가 (COST-002)
+ *       │     - calculateAllFutureMenuCosts(): 전체 메뉴 미래 예측 원가 (COST-002)
+ *       │
+ *       ├── [MenuRiskService]
+ *       │     - compareMenuCost()           : 메뉴 원가 변동 비교 및 상승률 (COST-005)
+ *       │     - compareAllMenuCosts()        : 전체 메뉴 원가 변동 비교 목록 (COST-005)
+ *       │     - identifyCostDrivers()       : 원가 상승 기여 식재료(Cost Driver) 식별 (COST-006)
+ *       │     - identifyAllCostDrivers()     : 전체 메뉴 Cost Driver 목록 (COST-006)
+ *       │     - evaluateMenuRisk()          : 메뉴 가격 위험도 종합 진단 (MENU-009)
+ *       │     - evaluateAllMenuRisks()       : 전체 메뉴 위험도 종합 목록 (MENU-009)
+ *       │
+ *       ├── [MealPlanCostService]
+ *       │     - calculateWeeklyMealPlanCost() : 주간 7일 식단 총 예상 식재료비 (COST-012)
+ *       │     - calculateMonthlyMealPlanCost(): 월간 주차별 총 예상 식재료비 & 잔여액 (COST-013)
+ *       │
+ *       └── [BudgetAnalysisService]
+ *             - evaluateBudgetRisk()        : 향후 2주간 예산 초과 위험 경고 분석 (BUDG-002)
+ *             - evaluateBudgetUsage()       : 월 예산 대비 예상 사용액 & 사용률 (COST-014)
  */
 @Service
 @RequiredArgsConstructor

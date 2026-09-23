@@ -19,15 +19,38 @@ import java.util.stream.Collectors;
 import static com.human.backend.cost.util.CostCalculationUtils.*;
 
 /**
- * 메뉴 원가 비교 분석 및 식재료 가격 위험 진단 전담 서비스
- * 담당 요구사항:
- * - MENU-009: 메뉴 구성 주요 식재료의 가격 위험을 종합해 메뉴 위험도를 표시한다.
- * - COST-005: 현재 메뉴 원가와 미래 예상 원가를 비교하여 차액과 상승률을 표시한다.
- * - COST-006: 메뉴 원가 상승에 가장 크게 기여하는 식재료(Cost Driver)를 식별한다.
+ * [메뉴 원가 비교 분석 및 식재료 가격 위험 진단 전담 서비스]
+ *
+ * ■ 담당 요구사항:
+ *   - COST-005: 현재 메뉴 원가와 미래 예상 원가를 비교하여 차액과 상승률을 표시한다.
+ *   - COST-006: 메뉴 원가 상승에 가장 크게 기여하는 식재료(Cost Driver)를 식별한다.
+ *   - MENU-009: 메뉴 구성 주요 식재료의 가격 위험을 종합해 메뉴 위험도를 표시한다.
+ *
+ * ■ 주요 분석 흐름 (Analysis Flow):
+ *   1. [COST-005 원가 변동 비교]
+ *      - 현재 원가(current) & 미래 원가(future) 동시 계산
+ *      - 1인분 차액(차액 = 미래 - 현재) 및 상승률(%) 산출
+ *      - 개별 식재료별 단가 및 재료비 변동 내역(IngredientCostComparison) 매핑
+ *
+ *   2. [COST-006 Cost Driver 식별 & 랭킹]
+ *      - 식재료별 재료비 상승액(lineCostDiff) 기준 내림차순 정렬 및 순위 부여
+ *      - 전체 원가 상승액 대비 기여율(contributionRate = (lineCostDiff / totalDiff) * 100) 산출
+ *      - 상승 기여도 1위 식재료(Top Driver) 도출
+ *
+ *   3. [MENU-009 식재료 가격 위험 종합 진단]
+ *      - 개별 식재료 위험도 판정:
+ *          * WARNING : 단가 상승률 >= 20% 또는 (상승률 >= 10% & 기여율 >= 30%)
+ *          * CAUTION : 단가 상승률 >= 8%
+ *          * SAFE    : 그 외 안정세
+ *      - 메뉴 종합 위험도(riskLevel, riskScore, riskSummary) 도출:
+ *          * WARNING (위험) : 경고 식재료 존재 또는 총 원가 상승률 >= 15%
+ *          * CAUTION (주의) : 주의 식재료 존재 또는 총 원가 상승률 >= 7%
+ *          * SAFE (안정)    : 원가 변동 안정 범위
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class MenuRiskService {
 
     private final MenuCostService menuCostService;
