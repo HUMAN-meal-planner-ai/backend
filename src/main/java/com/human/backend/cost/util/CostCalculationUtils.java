@@ -109,9 +109,22 @@ public final class CostCalculationUtils {
     }
 
     /**
+     * 식단 목록의 총 예상 비용 합산 (null 안전)
+     */
+    public static BigDecimal calculateTotalMealPlansCost(java.util.List<com.human.backend.cost.entity.MealPlanCostVo> plans) {
+        if (plans == null || plans.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        return plans.stream()
+                .map(com.human.backend.cost.entity.MealPlanCostVo::calculateTotalCost)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
      * 예측 기준일자 방어 처리 (null일 경우 기본 예측기준일 보정)
      */
     public static LocalDate resolveTargetDate(LocalDate targetDate) {
         return (targetDate != null) ? targetDate : DEFAULT_PREDICTION_DATE;
     }
 }
+

@@ -5,6 +5,7 @@ import com.human.backend.cost.dto.response.BudgetUsageRateResponse;
 import com.human.backend.cost.dto.response.CostDriverResponse;
 import com.human.backend.cost.dto.response.MenuCostComparisonResponse;
 import com.human.backend.cost.dto.response.MenuCostResponse;
+import com.human.backend.cost.dto.response.MenuRiskResponse;
 import com.human.backend.cost.dto.response.MonthlyMealPlanCostResponse;
 import com.human.backend.cost.dto.response.WeeklyMealPlanCostResponse;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +17,7 @@ import java.util.List;
 
 /**
  * 원가 및 예산 분석 통합 서비스 파사드 (Facade)
- * 도메인별로 분리된 하위 서비스(MenuCostService, MealPlanCostService, BudgetAnalysisService)에
+ * 도메인별로 분리된 하위 서비스(MenuCostService, MenuRiskService, MealPlanCostService, BudgetAnalysisService)에
  * 작업을 위임하여 단일 창구 역할을 제공합니다.
  */
 @Service
@@ -24,15 +25,16 @@ import java.util.List;
 public class CostService {
 
     private final MenuCostService menuCostService;
+    private final MenuRiskService menuRiskService;
     private final MealPlanCostService mealPlanCostService;
     private final BudgetAnalysisService budgetAnalysisService;
 
     // ==========================================
-    // 1. 메뉴 원가 및 분석 (MenuCostService 위임)
+    // 1. 메뉴 원가 계산 (MenuCostService 위임)
     // ==========================================
 
     /**
-     * 최신 식재료 가격과 사용 중량으로 메뉴 현재 원가 계산 (COST-001, COST-004, COST-009)
+     * 최신 식재료 가격과 사용 중량으로 메뉴 현재 원가 계산 (MENU-008, COST-001, COST-004, COST-009)
      */
     public MenuCostResponse calculateCurrentMenuCost(Long menuId, Integer mealCount, BigDecimal targetCost) {
         return menuCostService.calculateCurrentMenuCost(menuId, mealCount, targetCost);
@@ -59,36 +61,54 @@ public class CostService {
         return menuCostService.calculateAllFutureMenuCosts(targetDate, mealCount, targetCost);
     }
 
+    // ==========================================
+    // 2. 메뉴 원가 비교 및 위험도 분석 (MenuRiskService 위임)
+    // ==========================================
+
     /**
      * 현재 메뉴 원가와 미래 예상 원가 비교 및 상승률 분석 (COST-005)
      */
     public MenuCostComparisonResponse compareMenuCost(Long menuId, LocalDate targetDate, Integer mealCount) {
-        return menuCostService.compareMenuCost(menuId, targetDate, mealCount);
+        return menuRiskService.compareMenuCost(menuId, targetDate, mealCount);
     }
 
     /**
      * 모든 메뉴 대상 현재 원가 vs 미래 예상 원가 비교 일괄 목록 산출 (COST-005)
      */
     public List<MenuCostComparisonResponse> compareAllMenuCosts(LocalDate targetDate, Integer mealCount) {
-        return menuCostService.compareAllMenuCosts(targetDate, mealCount);
+        return menuRiskService.compareAllMenuCosts(targetDate, mealCount);
     }
 
     /**
      * 메뉴 원가 상승에 가장 크게 기여하는 식재료(Cost Driver) 식별 (COST-006)
      */
     public CostDriverResponse identifyCostDrivers(Long menuId, LocalDate targetDate) {
-        return menuCostService.identifyCostDrivers(menuId, targetDate);
+        return menuRiskService.identifyCostDrivers(menuId, targetDate);
     }
 
     /**
      * 모든 메뉴 대상 원가 상승 기여 식재료 식별 일괄 목록 산출 (COST-006)
      */
     public List<CostDriverResponse> identifyAllCostDrivers(LocalDate targetDate) {
-        return menuCostService.identifyAllCostDrivers(targetDate);
+        return menuRiskService.identifyAllCostDrivers(targetDate);
+    }
+
+    /**
+     * 메뉴 구성 주요 식재료의 가격 위험 종합 및 메뉴 위험도 산출 (MENU-009)
+     */
+    public MenuRiskResponse evaluateMenuRisk(Long menuId, LocalDate targetDate) {
+        return menuRiskService.evaluateMenuRisk(menuId, targetDate);
+    }
+
+    /**
+     * 모든 메뉴 대상 주요 식재료 가격 위험 종합 및 메뉴 위험도 일괄 산출 (MENU-009)
+     */
+    public List<MenuRiskResponse> evaluateAllMenuRisks(LocalDate targetDate) {
+        return menuRiskService.evaluateAllMenuRisks(targetDate);
     }
 
     // ==========================================
-    // 2. 식단 식재료비 계산 (MealPlanCostService 위임)
+    // 3. 식단 식재료비 계산 (MealPlanCostService 위임)
     // ==========================================
 
     /**

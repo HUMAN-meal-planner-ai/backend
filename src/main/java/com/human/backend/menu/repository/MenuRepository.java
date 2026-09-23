@@ -45,7 +45,5 @@ public class MenuRepository {
             );
         });
     }
-    // public  List<MenuByCode> getMenuByCode() {
-    //     return List.of();
-    // }
+
 }
