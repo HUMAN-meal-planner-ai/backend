@@ -1,46 +1,98 @@
 package com.human.backend.cost.repository;
 
+import com.human.backend.cost.entity.FacilityBudgetVo;
+import com.human.backend.cost.entity.MealPlanCostVo;
 import com.human.backend.cost.entity.MenuIngredientCostVo;
+import com.human.backend.cost.repository.CostCsvDataLoader.LoadedCostData;
+import com.human.backend.cost.repository.CostCsvDataLoader.PriceInfo;
+import com.human.backend.cost.repository.CostCsvDataLoader.RawMealPlanInfo;
+import com.human.backend.cost.util.CostConstants;
+import com.human.backend.facility.entity.Facility;
+import com.human.backend.facility.repository.FacilityRepository;
+import com.human.backend.menu.dto.response.MenuResponse;
+import com.human.backend.menu.repository.MenuRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStreamReader;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Collectors;
 
 /**
- * CSV 파일 기반의 CostRepository 구현체
- * mock_csv_bundle 디렉터리의 CSV 파일들을 읽어 인메모리에 적재하고 원가 조회 기능을 제공합니다.
+ * [인메모리 및 DB 연동 기반의 CostRepository 구현체]
+ *
+ * ■ 데이터 소스 조회 우선순위 및 흐름 (Data Source Resolution Flow):
+ *   1. 마스터 데이터 (메뉴명, 시설명):
+ *      - 1순위: 실제 DB 저장소(MenuRepository, FacilityRepository) 조회
+ *      - 2순위: DB 조회 실패 또는 미존재 시 CSV Mock 캐시 데이터 fallback
+ *
+ *   2. 시계열 및 상세 데이터 (식재료 구성, 시세 및 예측단가, 식단 정보):
+ *      - CostCsvDataLoader가 초기화 시점에 로딩한 ConcurrentHashMap 캐시 데이터 활용
+ *
+ *   3. 실시간 식단 1인분 원가 산출:
+ *      - 식단 일자(planDate) 및 구성 메뉴의 식재료별 예측단가(predictedPriceMap)를 실시간 결합하여 산출
  */
 @Slf4j
 @Repository
+@SuppressWarnings("null")
 public class MemoryCostRepository implements CostRepository {
 
     @Value("${mock.csv.path:src/main/java/com/human/backend/cost/dummy}")
     private String mockCsvPath = "src/main/java/com/human/backend/cost/dummy";
 
+    private final CostCsvDataLoader csvDataLoader;
+    private final MenuRepository menuRepository;
+    private final FacilityRepository facilityRepository;
+
     private final Map<Long, String> menuMap = new ConcurrentHashMap<>();
     private final Map<Long, List<MenuIngredientCostVo>> menuIngredientsMap = new ConcurrentHashMap<>();
+    private final Map<Long, String> facilityNameMap = new ConcurrentHashMap<>();
+    private final Map<String, FacilityBudgetVo> budgetMap = new ConcurrentHashMap<>();
+    private final List<RawMealPlanInfo> rawMealPlanList = new CopyOnWriteArrayList<>();
+    private final Map<Long, List<Long>> planMenuItemsMap = new ConcurrentHashMap<>();
+    private final Map<String, BigDecimal> predictedPriceMap = new ConcurrentHashMap<>();
+    private final Map<Long, PriceInfo> latestPriceMap = new ConcurrentHashMap<>();
 
-    // 테스트나 프로그래밍적 초기화를 위한 생성자
     public MemoryCostRepository() {
+        this.csvDataLoader = new CostCsvDataLoader();
+        this.menuRepository = null;
+        this.facilityRepository = null;
     }
 
-    // 경로 직접 지정 생성자 (단위 테스트 등에서 활용)
+    @Autowired
+    public MemoryCostRepository(
+            @Autowired(required = false) CostCsvDataLoader csvDataLoader,
+            @Autowired(required = false) MenuRepository menuRepository,
+            @Autowired(required = false) FacilityRepository facilityRepository) {
+        this.csvDataLoader = csvDataLoader != null ? csvDataLoader : new CostCsvDataLoader();
+        this.menuRepository = menuRepository;
+        this.facilityRepository = facilityRepository;
+    }
+
     public MemoryCostRepository(String mockCsvPath) {
         this.mockCsvPath = mockCsvPath;
+        this.csvDataLoader = new CostCsvDataLoader();
+        this.menuRepository = null;
+        this.facilityRepository = null;
+    }
+
+    public MemoryCostRepository(String mockCsvPath, MenuRepository menuRepository, FacilityRepository facilityRepository) {
+        this.mockCsvPath = mockCsvPath;
+        this.menuRepository = menuRepository;
+        this.facilityRepository = facilityRepository;
+        this.csvDataLoader = new CostCsvDataLoader();
     }
 
     /**
-     * 스프링 빈 초기화 시 CSV 파일들을 순차적으로 로드하여 결합합니다.
+     * 스프링 빈 초기화 시 CSV 파일들을 로드합니다.
      */
     @PostConstruct
     public void init() {
@@ -48,242 +100,61 @@ public class MemoryCostRepository implements CostRepository {
     }
 
     /**
-     * CSV 데이터를 읽어와 메모리 맵을 초기화하는 핵심 메서드
+     * CSV 데이터를 읽어와 메모리 맵을 초기화합니다.
      */
     public synchronized void loadDataFromCsv() {
-        log.info(">> [MemoryCostRepository] CSV mock data 로딩 시작. 경로: {}", mockCsvPath);
-        File baseDir = new File(mockCsvPath);
-        if (!baseDir.exists() || !baseDir.isDirectory()) {
-            log.warn(">> [MemoryCostRepository] 지정된 CSV 디렉터리를 찾을 수 없습니다: {}", mockCsvPath);
-            return;
-        }
+        LoadedCostData data = csvDataLoader.loadAll(mockCsvPath);
 
-        try {
-            // 1. menu.csv 읽기 -> menuId -> menuName
-            Map<Long, String> loadedMenuMap = loadMenuCsv(new File(baseDir, "menu.csv"));
+        facilityNameMap.clear();
+        facilityNameMap.putAll(data.getFacilityNameMap());
 
-            // 2. ingredient.csv 읽기 -> ingredientId -> ingredientName
-            Map<Long, String> ingredientNameMap = loadIngredientCsv(new File(baseDir, "ingredient.csv"));
+        menuMap.clear();
+        menuMap.putAll(data.getMenuMap());
 
-            // 3. ingredient_price.csv 읽기 -> ingredientId -> 최신 PriceInfo (가격, 기준일)
-            Map<Long, PriceInfo> latestPriceMap = loadLatestIngredientPrices(new File(baseDir, "ingredient_price.csv"));
+        latestPriceMap.clear();
+        latestPriceMap.putAll(data.getLatestPriceMap());
 
-            // 4. menu_ingredient.csv 읽기 및 결합 -> menuId -> List<MenuIngredientCostVo>
-            Map<Long, List<MenuIngredientCostVo>> loadedMenuIngredientsMap = loadMenuIngredients(
-                    new File(baseDir, "menu_ingredient.csv"),
-                    ingredientNameMap,
-                    latestPriceMap
-            );
+        predictedPriceMap.clear();
+        predictedPriceMap.putAll(data.getPredictedPriceMap());
 
-            // 기존 맵 데이터 갱신
-            menuMap.clear();
-            menuMap.putAll(loadedMenuMap);
+        menuIngredientsMap.clear();
+        menuIngredientsMap.putAll(data.getMenuIngredientsMap());
 
-            menuIngredientsMap.clear();
-            menuIngredientsMap.putAll(loadedMenuIngredientsMap);
+        planMenuItemsMap.clear();
+        planMenuItemsMap.putAll(data.getPlanMenuItemsMap());
 
-            log.info(">> [MemoryCostRepository] CSV mock data 로딩 완료: 총 {}개 메뉴, {}개 메뉴식재료 구성 로드됨",
-                    menuMap.size(), menuIngredientsMap.size());
+        budgetMap.clear();
+        budgetMap.putAll(data.getBudgetMap());
 
-        } catch (Exception e) {
-            log.error(">> [MemoryCostRepository] CSV mock data 로딩 중 오류 발생: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * menu.csv 파싱
-     * 컬럼: menu_id, menu_code, name, upper_category, category, slot_type, cooking_method, serving_weight, created_at, updated_at
-     */
-    private Map<Long, String> loadMenuCsv(File file) {
-        Map<Long, String> map = new HashMap<>();
-        if (!file.exists()) {
-            log.warn("menu.csv 파일이 존재하지 않습니다: {}", file.getAbsolutePath());
-            return map;
-        }
-
-        List<String[]> rows = readCsvRows(file);
-        for (String[] cols : rows) {
-            if (cols.length >= 3) {
-                try {
-                    Long menuId = Long.parseLong(cols[0].trim());
-                    String menuName = cols[2].trim();
-                    map.put(menuId, menuName);
-                } catch (NumberFormatException e) {
-                    log.debug("menu.csv 파싱 스킵 (헤더 또는 유효하지 않은 행): {}", (Object) cols);
-                }
-            }
-        }
-        return map;
-    }
-
-    /**
-     * ingredient.csv 파싱
-     * 컬럼: ingredient_id, ingredient_code, name, category, standard_unit, created_at, updated_at
-     */
-    private Map<Long, String> loadIngredientCsv(File file) {
-        Map<Long, String> map = new HashMap<>();
-        if (!file.exists()) {
-            log.warn("ingredient.csv 파일이 존재하지 않습니다: {}", file.getAbsolutePath());
-            return map;
-        }
-
-        List<String[]> rows = readCsvRows(file);
-        for (String[] cols : rows) {
-            if (cols.length >= 3) {
-                try {
-                    Long ingredientId = Long.parseLong(cols[0].trim());
-                    String ingredientName = cols[2].trim();
-                    map.put(ingredientId, ingredientName);
-                } catch (NumberFormatException e) {
-                    log.debug("ingredient.csv 파싱 스킵: {}", (Object) cols);
-                }
-            }
-        }
-        return map;
-    }
-
-    /**
-     * ingredient_price.csv 파싱하여 식재료별 '최신 가격 정보(가장 최근 price_date)'만 추출
-     * 컬럼: price_id, ingredient_id, price_date, variety, grade, price_type, original_unit, original_price, standard_unit_price, market, region, source_name, source_item_code, created_at
-     */
-    private Map<Long, PriceInfo> loadLatestIngredientPrices(File file) {
-        Map<Long, PriceInfo> map = new HashMap<>();
-        if (!file.exists()) {
-            log.warn("ingredient_price.csv 파일이 존재하지 않습니다: {}", file.getAbsolutePath());
-            return map;
-        }
-
-        List<String[]> rows = readCsvRows(file);
-        for (String[] cols : rows) {
-            if (cols.length >= 9) {
-                try {
-                    Long ingredientId = Long.parseLong(cols[1].trim());
-                    LocalDate priceDate = LocalDate.parse(cols[2].trim());
-                    BigDecimal standardUnitPrice = new BigDecimal(cols[8].trim());
-
-                    // 기존에 저장된 데이터가 없거나, 현재 행의 날짜가 더 최신인 경우 갱신
-                    PriceInfo currentBest = map.get(ingredientId);
-                    if (currentBest == null || priceDate.isAfter(currentBest.priceDate)) {
-                        map.put(ingredientId, new PriceInfo(priceDate, standardUnitPrice));
-                    }
-                } catch (Exception e) {
-                    log.debug("ingredient_price.csv 파싱 스킵: {}", (Object) cols);
-                }
-            }
-        }
-        return map;
-    }
-
-    /**
-     * menu_ingredient.csv 파싱 및 식재료명, 최신 단가 결합
-     * 컬럼: menu_ingredient_id, menu_id, ingredient_id, quantity, is_primary, created_at
-     */
-    private Map<Long, List<MenuIngredientCostVo>> loadMenuIngredients(
-            File file,
-            Map<Long, String> ingredientNameMap,
-            Map<Long, PriceInfo> latestPriceMap) {
-
-        Map<Long, List<MenuIngredientCostVo>> map = new HashMap<>();
-        if (!file.exists()) {
-            log.warn("menu_ingredient.csv 파일이 존재하지 않습니다: {}", file.getAbsolutePath());
-            return map;
-        }
-
-        List<String[]> rows = readCsvRows(file);
-        for (String[] cols : rows) {
-            if (cols.length >= 4) {
-                try {
-                    Long menuId = Long.parseLong(cols[1].trim());
-                    Long ingredientId = Long.parseLong(cols[2].trim());
-                    BigDecimal quantity = new BigDecimal(cols[3].trim());
-
-                    String ingredientName = ingredientNameMap.getOrDefault(ingredientId, "식재료-" + ingredientId);
-                    PriceInfo priceInfo = latestPriceMap.get(ingredientId);
-
-                    BigDecimal unitPrice = (priceInfo != null) ? priceInfo.standardUnitPrice : BigDecimal.ZERO;
-                    LocalDate priceDate = (priceInfo != null) ? priceInfo.priceDate : LocalDate.now();
-
-                    MenuIngredientCostVo vo = new MenuIngredientCostVo(
-                            ingredientId,
-                            ingredientName,
-                            quantity,
-                            unitPrice,
-                            priceDate
-                    );
-
-                    map.computeIfAbsent(menuId, k -> new ArrayList<>()).add(vo);
-                } catch (Exception e) {
-                    log.debug("menu_ingredient.csv 파싱 스킵: {}", (Object) cols);
-                }
-            }
-        }
-        return map;
-    }
-
-    /**
-     * CSV 파일을 읽어 행별 문자열 배열 리스트로 반환 (첫 번째 헤더 행 자동 제외, BOM 제거)
-     */
-    private List<String[]> readCsvRows(File file) {
-        List<String[]> list = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
-            String line;
-            boolean isFirstLine = true;
-            while ((line = br.readLine()) != null) {
-                if (line.isBlank()) {
-                    continue;
-                }
-                // BOM 제거
-                if (isFirstLine) {
-                    if (line.startsWith("\uFEFF")) {
-                        line = line.substring(1);
-                    }
-                    isFirstLine = false;
-                    // 헤더 행 건너뛰기
-                    continue;
-                }
-
-                String[] tokens = parseCsvLine(line);
-                list.add(tokens);
-            }
-        } catch (Exception e) {
-            log.error("CSV 파일 읽기 실패: {} ({})", file.getAbsolutePath(), e.getMessage());
-        }
-        return list;
-    }
-
-    /**
-     * 간단한 콤마 구분 파서 (따옴표 내 콤마 처리 포함)
-     */
-    private String[] parseCsvLine(String line) {
-        List<String> tokens = new ArrayList<>();
-        StringBuilder sb = new StringBuilder();
-        boolean inQuotes = false;
-
-        for (int i = 0; i < line.length(); i++) {
-            char c = line.charAt(i);
-            if (c == '\"') {
-                inQuotes = !inQuotes;
-            } else if (c == ',' && !inQuotes) {
-                tokens.add(sb.toString());
-                sb.setLength(0);
-            } else {
-                sb.append(c);
-            }
-        }
-        tokens.add(sb.toString());
-
-        return tokens.toArray(new String[0]);
+        rawMealPlanList.clear();
+        rawMealPlanList.addAll(data.getRawMealPlanList());
     }
 
     @Override
     public List<Long> findAllMenuIds() {
-        List<Long> ids = new ArrayList<>(menuMap.keySet());
+        List<Long> ids = new ArrayList<>(menuIngredientsMap.keySet());
         ids.sort(Long::compareTo);
         return ids;
     }
 
     @Override
     public Optional<String> findMenuNameById(Long menuId) {
+        if (menuRepository != null && menuId != null) {
+            try {
+                List<MenuResponse> menus = menuRepository.getMenus();
+                if (menus != null) {
+                    Optional<String> dbMenuName = menus.stream()
+                            .filter(m -> Objects.equals(m.getMenuId(), menuId))
+                            .map(MenuResponse::getMenuName)
+                            .findFirst();
+                    if (dbMenuName.isPresent()) {
+                        return dbMenuName;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn(">> [MemoryCostRepository] DB 메뉴명 조회 실패, CSV 데이터를 사용합니다: {}", e.getMessage());
+            }
+        }
         return Optional.ofNullable(menuMap.get(menuId));
     }
 
@@ -292,14 +163,122 @@ public class MemoryCostRepository implements CostRepository {
         return menuIngredientsMap.getOrDefault(menuId, Collections.emptyList());
     }
 
-    // 내부 식재료 가격 정보 DTO
-    private static class PriceInfo {
-        private final LocalDate priceDate;
-        private final BigDecimal standardUnitPrice;
-
-        public PriceInfo(LocalDate priceDate, BigDecimal standardUnitPrice) {
-            this.priceDate = priceDate;
-            this.standardUnitPrice = standardUnitPrice;
+    @Override
+    public List<MenuIngredientCostVo> findPredictedIngredientsByMenuId(Long menuId, LocalDate targetDate) {
+        List<MenuIngredientCostVo> baseIngredients = menuIngredientsMap.get(menuId);
+        if (baseIngredients == null || baseIngredients.isEmpty()) {
+            return Collections.emptyList();
         }
+
+        LocalDate lookupDate = (targetDate != null) ? targetDate : LocalDate.now();
+        List<MenuIngredientCostVo> result = new ArrayList<>();
+
+        for (MenuIngredientCostVo item : baseIngredients) {
+            Long ingredientId = item.getIngredientId();
+            String predKey = lookupDate + ":" + ingredientId;
+            BigDecimal predictedPrice = predictedPriceMap.get(predKey);
+
+            BigDecimal finalUnitPrice;
+            LocalDate finalPriceDate;
+
+            if (predictedPrice != null) {
+                finalUnitPrice = predictedPrice;
+                finalPriceDate = lookupDate;
+            } else {
+                PriceInfo priceInfo = latestPriceMap.get(ingredientId);
+                finalUnitPrice = (priceInfo != null) ? priceInfo.getStandardUnitPrice() : item.getStandardUnitPrice();
+                finalPriceDate = (priceInfo != null) ? priceInfo.getPriceDate() : item.getPriceDate();
+            }
+
+            result.add(new MenuIngredientCostVo(
+                    ingredientId,
+                    item.getIngredientName(),
+                    item.getQuantity(),
+                    finalUnitPrice,
+                    finalPriceDate
+            ));
+        }
+
+        return result;
+    }
+
+    @Override
+    public Optional<FacilityBudgetVo> findFacilityBudget(Long facilityId, YearMonth month) {
+        String key = facilityId + ":" + month;
+        FacilityBudgetVo csvBudget = budgetMap.get(key);
+
+        String facilityName = null;
+        if (facilityRepository != null && facilityId != null) {
+            try {
+                facilityName = facilityRepository.findById(facilityId)
+                        .map(Facility::getName)
+                        .orElse(null);
+            } catch (Exception e) {
+                log.warn(">> [MemoryCostRepository] DB 시설 조회 실패, CSV 데이터를 사용합니다: {}", e.getMessage());
+            }
+        }
+
+        if (csvBudget != null) {
+            if (facilityName != null) {
+                return Optional.of(new FacilityBudgetVo(facilityId, facilityName, csvBudget.getBudgetMonth(), csvBudget.getBudgetAmount()));
+            }
+            return Optional.of(csvBudget);
+        }
+
+        if (facilityName != null) {
+            return Optional.of(new FacilityBudgetVo(facilityId, facilityName, month, CostConstants.DEFAULT_MONTHLY_BUDGET));
+        }
+
+        return Optional.empty();
+    }
+
+    @Override
+    public List<MealPlanCostVo> findMealPlansByFacilityAndDateRange(Long facilityId, LocalDate startDate, LocalDate endDate) {
+        return rawMealPlanList.stream()
+                .filter(p -> Objects.equals(p.getFacilityId(), facilityId))
+                .filter(p -> (p.getPlanDate().isEqual(startDate) || p.getPlanDate().isAfter(startDate)) &&
+                             (p.getPlanDate().isEqual(endDate) || p.getPlanDate().isBefore(endDate)))
+                .sorted(Comparator.comparing(RawMealPlanInfo::getPlanDate))
+                .map(this::calculateRealtimeMealPlanCost)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 식단에 포함된 메뉴들의 식재료 예측가/최신 단가를 실시간 곱연산하여 1인분 원가 산출
+     */
+    private MealPlanCostVo calculateRealtimeMealPlanCost(RawMealPlanInfo raw) {
+        List<Long> menuIds = planMenuItemsMap.getOrDefault(raw.getPlanId(), Collections.emptyList());
+        if (menuIds.isEmpty()) {
+            return new MealPlanCostVo(raw.getPlanId(), raw.getFacilityId(), raw.getPlanDate(), raw.getMealType(), raw.getMealCount(), raw.getFallbackCost());
+        }
+
+        BigDecimal calculatedCostPerPerson = BigDecimal.ZERO;
+
+        for (Long menuId : menuIds) {
+            List<MenuIngredientCostVo> ingredients = menuIngredientsMap.getOrDefault(menuId, Collections.emptyList());
+            for (MenuIngredientCostVo ingredient : ingredients) {
+                Long ingredientId = ingredient.getIngredientId();
+                BigDecimal quantity = ingredient.getQuantity();
+
+                String predKey = raw.getPlanDate() + ":" + ingredientId;
+                BigDecimal unitPrice = predictedPriceMap.get(predKey);
+
+                if (unitPrice == null) {
+                    PriceInfo priceInfo = latestPriceMap.get(ingredientId);
+                    unitPrice = (priceInfo != null) ? priceInfo.getStandardUnitPrice() : ingredient.getStandardUnitPrice();
+                }
+
+                if (quantity != null && unitPrice != null) {
+                    BigDecimal lineCost = quantity.multiply(unitPrice);
+                    calculatedCostPerPerson = calculatedCostPerPerson.add(lineCost);
+                }
+            }
+        }
+
+        BigDecimal finalCostPerPerson = calculatedCostPerPerson.compareTo(BigDecimal.ZERO) > 0
+                ? calculatedCostPerPerson.setScale(2, RoundingMode.HALF_UP)
+                : raw.getFallbackCost();
+
+        return new MealPlanCostVo(raw.getPlanId(), raw.getFacilityId(), raw.getPlanDate(), raw.getMealType(), raw.getMealCount(), finalCostPerPerson);
     }
 }

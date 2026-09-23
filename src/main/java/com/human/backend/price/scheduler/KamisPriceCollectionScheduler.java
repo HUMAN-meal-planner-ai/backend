@@ -1,5 +1,6 @@
 package com.human.backend.price.scheduler;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -33,27 +34,33 @@ public class KamisPriceCollectionScheduler {
     }
 
     @Scheduled(
-            cron = "${kamis.collection.schedule.cron:0 0 6 * * *}",
+            cron = "${kamis.collection.schedule.cron:0 0 2 * * MON}",
             zone = "${kamis.collection.schedule.zone:Asia/Seoul}")
     public void collectRecentPrices() {
         collectRecentPrices(LocalDate.now(zoneId));
     }
 
     void collectRecentPrices(LocalDate endDate) {
+        Instant startedAt = Instant.now();
+        long startedNanos = System.nanoTime();
         LocalDate startDate = endDate.minusDays(lookbackDays - 1L);
-        log.info("KAMIS 자동 가격 수집을 시작합니다. 조회 기간={}~{}", startDate, endDate);
+        log.info("주간 KAMIS 가격 수집을 시작합니다. 실행 시작 시각={}, 조회 기간={}~{}",
+                startedAt, startDate, endDate);
 
         try {
             List<PriceTargetCollectionResult> results = priceService.collectAll(startDate, endDate);
-            logCompletion(startDate, endDate, results);
+            logCompletion(startedAt, elapsedMillis(startedNanos), startDate, endDate, results);
         } catch (RuntimeException exception) {
             log.error(
-                    "KAMIS 자동 가격 수집 작업에 실패했습니다. 조회 기간={}~{}, 사유={}",
-                    startDate, endDate, exception.getMessage(), exception);
+                    "주간 KAMIS 가격 수집에 실패했습니다. 실행 시작 시각={}, 소요 시간={}ms, "
+                            + "조회 기간={}~{}, 사유={}",
+                    startedAt, elapsedMillis(startedNanos), startDate, endDate,
+                    exception.getMessage(), exception);
         }
     }
 
     private void logCompletion(
+            Instant startedAt, long elapsedMillis,
             LocalDate startDate, LocalDate endDate,
             List<PriceTargetCollectionResult> results) {
         long succeeded = results.stream()
@@ -66,10 +73,16 @@ public class KamisPriceCollectionScheduler {
         int invalidRows = sum(results, PriceTargetCollectionResult::invalidRowsSkipped);
 
         log.info(
-                "KAMIS 자동 가격 수집을 완료했습니다. 조회 기간={}~{}, 대상={}, 성공={}, 실패={}, "
+                "주간 KAMIS 가격 수집을 완료했습니다. 실행 시작 시각={}, 소요 시간={}ms, "
+                        + "조회 기간={}~{}, 대상={}, 성공={}, 실패={}, "
                         + "조회 행={}, 신규 저장={}, 중복 제외={}, 기간 밖 제외={}, 유효하지 않은 행 제외={}",
-                startDate, endDate, results.size(), succeeded, results.size() - succeeded,
+                startedAt, elapsedMillis, startDate, endDate,
+                results.size(), succeeded, results.size() - succeeded,
                 fetchedRows, insertedRows, duplicateRows, outOfRangeRows, invalidRows);
+    }
+
+    private long elapsedMillis(long startedNanos) {
+        return (System.nanoTime() - startedNanos) / 1_000_000L;
     }
 
     private int sum(
