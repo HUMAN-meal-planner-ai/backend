@@ -11,10 +11,19 @@ import java.time.YearMonth;
 import static com.human.backend.cost.util.CostConstants.*;
 
 /**
- * 원가 및 예산 분석을 위한 연산/변환 공통 유틸리티 클래스
- * [안정성 및 재사용성 향상]: 0 나누기(Divide-by-Zero) 예외 방어 및 소수점 처리 정책 통일
+ * [원가 및 예산 분석을 위한 연산/변환 공통 유틸리티]
+ *
+ * ■ 설계 원칙 및 안전 연산 정책:
+ *   1. 0 나누기(Divide-by-Zero) 및 Null Pointer 방어:
+ *      - 분모가 null이거나 <= 0인 경우 ArithmeticException 대신 안전하게 BigDecimal.ZERO 반환
+ *   2. 소수점 및 반올림 정책 통일:
+ *      - 비율 연산 중간 계산: 4자리(PERCENT_CALC_SCALE), 최종 표기: 2자리(PERCENT_DISPLAY_SCALE)
+ *      - 단가/원가 계산: 2자리(UNIT_PRICE_SCALE), 총합계: 0자리 정수 반올림(TOTAL_AMOUNT_SCALE)
+ *   3. 요청 파라미터 기본값 보정(Fallback):
+ *      - 식수(resolveMealCount), 목표원가(resolveTargetCost), 예측일자(resolveTargetDate), 연월(parseYearMonth)
  */
 @Slf4j
+@SuppressWarnings("null")
 public final class CostCalculationUtils {
 
     private CostCalculationUtils() {

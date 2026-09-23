@@ -22,10 +22,25 @@ import static com.human.backend.cost.util.CostCalculationUtils.*;
 import static com.human.backend.cost.util.CostConstants.*;
 
 /**
- * 예산 초과 위험 및 예산 대비 사용률 분석 전담 서비스
- * 담당 요구사항:
- * - BUDG-002: 이번 주·다음 주 예상 비용과 월 잔여 예산을 기준으로 예산 초과 위험이 있으면 경고한다.
- * - COST-014: 설정된 예산 대비 예상 사용액과 사용률을 표시한다.
+ * [예산 초과 위험 및 예산 대비 사용률 분석 전담 서비스]
+ *
+ * ■ 담당 요구사항:
+ *   - BUDG-002: 이번 주·다음 주 예상 비용과 월 잔여 예산을 기준으로 예산 초과 위험이 있으면 경고한다.
+ *   - COST-014: 설정된 예산 대비 예상 사용액과 사용률을 표시한다.
+ *
+ * ■ 분석 처리 흐름 (Analysis Flow):
+ *   1. [BUDG-002 2주 예산 초과 위험 분석]
+ *      ① [과거 기 집행액 산출] : 월초(1일) ~ 이번 주 직전(일요일)까지의 실제 집행 비용 합산 (currentSpentCost)
+ *      ② [월 잔여 예산 도출]    : 월 배정 예산(monthlyBudget) - 과거 기 집행액 = 월 잔여 예산(monthlyRemainingBudget)
+ *      ③ [향후 2주 소요액 산출] : 이번 주 예상 비용 + 다음 주 예상 비용 = 2주간 총 예상 소요액 (twoWeeksTotalExpectedCost)
+ *      ④ [예산 초과 위험 판정] : 2주 예상 소요액 > 월 잔여 예산인 경우
+ *                                 ──> 초과 여부(isRisk = true), 초과액(exceededAmount), 경고 등급(WARNING/CAUTION/SAFE)
+ *      ⑤ [경고 메시지 생성]    : 관리자가 직관적으로 대응할 수 있는 상세 권고사항 포맷팅
+ *
+ *   2. [COST-014 월 예산 소진율 및 사용률 분석]
+ *      ① [기 집행액 + 잔여 예상액 합산] : 기준일 이전(과거) 지출액 + 기준일 이후(미래) 예상액 = 월 총 예상 사용액
+ *      ② [소진율(%) 계산]              : (월 총 예상 사용액 / 월 배정 예산) * 100
+ *      ③ [운영 상태 판정]              : EXCEEDED(초과), WARNING(95% 이상), CAUTION(80% 이상), STABLE(안정)
  */
 @Slf4j
 @Service
