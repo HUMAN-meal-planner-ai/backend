@@ -110,16 +110,13 @@ public interface PriceSeriesRepository extends JpaRepository<PriceSeries, Long> 
                 JOIN mealfit.price_series regional
                   ON regional.ingredient_id = canonical.ingredient_id
                  AND regional.source_name = canonical.source_name
-                 AND regional.source_category_code = canonical.source_category_code
-                 AND regional.source_item_code = canonical.source_item_code
-                 AND regional.source_kind_code = canonical.source_kind_code
-                 AND regional.source_rank_code = canonical.source_rank_code
-                 AND regional.variety = canonical.variety
-                 AND regional.grade = canonical.grade
-                 AND regional.price_type = canonical.price_type
-                 AND regional.market = canonical.market
-                 AND regional.original_unit = canonical.original_unit
-                 AND regional.unit_quantity = canonical.unit_quantity
+                 AND regional.source_category_code IS NOT DISTINCT FROM canonical.source_category_code
+                 AND regional.source_item_code IS NOT DISTINCT FROM canonical.source_item_code
+                 AND regional.source_kind_code IS NOT DISTINCT FROM canonical.source_kind_code
+                 AND regional.source_rank_code IS NOT DISTINCT FROM canonical.source_rank_code
+                 AND regional.price_type IS NOT DISTINCT FROM canonical.price_type
+                 AND regional.original_unit IS NOT DISTINCT FROM canonical.original_unit
+                 AND regional.unit_quantity IS NOT DISTINCT FROM canonical.unit_quantity
                  AND (UPPER(regional.region) IN ('SEOUL', 'BUSAN', 'DAEJEON')
                       OR regional.region IN ('서울', '부산', '대전'))
                 JOIN mealfit.ingredient_price ip
@@ -159,4 +156,66 @@ public interface PriceSeriesRepository extends JpaRepository<PriceSeries, Long> 
             """, nativeQuery = true)
     List<WeeklyRepresentativePrice> findWeeklyRepresentativePrices(
             @Param("seriesIds") List<Long> seriesIds);
+
+    @Query(value = """
+            WITH canonical_series AS (
+                SELECT
+                    ps.series_id,
+                    ps.ingredient_id,
+                    ps.source_name,
+                    ps.source_category_code,
+                    ps.source_item_code,
+                    ps.source_kind_code,
+                    ps.source_rank_code,
+                    ps.price_type,
+                    ps.original_unit,
+                    ps.unit_quantity,
+                    ingredient.ingredient_code,
+                    ingredient.standard_unit
+                FROM mealfit.price_series ps
+                JOIN mealfit.ingredient ingredient
+                  ON ingredient.ingredient_id = ps.ingredient_id
+                WHERE ps.series_id = :seriesId
+                  AND ps.source_name = 'KAMIS'
+                  AND (UPPER(ps.region) = 'SEOUL' OR ps.region = '서울')
+                  AND ingredient.is_active = true
+            )
+            SELECT
+                canonical.series_id AS "seriesId",
+                canonical.ingredient_code AS "ingredientCode",
+                ip.price_date AS "priceDate",
+                AVG(ip.standard_unit_price) AS "representativePrice",
+                canonical.standard_unit AS "standardUnit"
+            FROM canonical_series canonical
+            JOIN mealfit.price_series regional
+              ON regional.ingredient_id = canonical.ingredient_id
+             AND regional.source_name = canonical.source_name
+             AND regional.source_category_code IS NOT DISTINCT FROM canonical.source_category_code
+             AND regional.source_item_code IS NOT DISTINCT FROM canonical.source_item_code
+             AND regional.source_kind_code IS NOT DISTINCT FROM canonical.source_kind_code
+             AND regional.source_rank_code IS NOT DISTINCT FROM canonical.source_rank_code
+             AND regional.price_type IS NOT DISTINCT FROM canonical.price_type
+             AND regional.original_unit IS NOT DISTINCT FROM canonical.original_unit
+             AND regional.unit_quantity IS NOT DISTINCT FROM canonical.unit_quantity
+             AND (UPPER(regional.region) IN ('SEOUL', 'BUSAN', 'DAEJEON')
+                  OR regional.region IN ('서울', '부산', '대전'))
+            JOIN mealfit.ingredient_price ip
+              ON ip.series_id = regional.series_id
+             AND ip.price_date BETWEEN :startDate AND :endDate
+            GROUP BY
+                canonical.series_id,
+                canonical.ingredient_code,
+                canonical.standard_unit,
+                ip.price_date
+            HAVING COUNT(DISTINCT CASE
+                WHEN UPPER(regional.region) = 'SEOUL' OR regional.region = '서울' THEN 'SEOUL'
+                WHEN UPPER(regional.region) = 'BUSAN' OR regional.region = '부산' THEN 'BUSAN'
+                WHEN UPPER(regional.region) = 'DAEJEON' OR regional.region = '대전' THEN 'DAEJEON'
+            END) = 3
+            ORDER BY ip.price_date
+            """, nativeQuery = true)
+    List<WeeklyRepresentativePrice> findDailyRepresentativePrices(
+            @Param("seriesId") Long seriesId,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate);
 }
