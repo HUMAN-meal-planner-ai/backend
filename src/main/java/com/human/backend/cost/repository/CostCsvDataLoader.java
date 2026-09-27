@@ -237,10 +237,10 @@ public class CostCsvDataLoader {
             while ((line = br.readLine()) != null) {
                 if (line.trim().isEmpty()) continue;
                 String[] tokens = parseCsvLine(line);
-                if (tokens.length >= 4) {
+                if (tokens.length >= 9) {
                     Long ingredientId = parseLongSafe(tokens[1]);
                     LocalDate priceDate = parseLocalDateSafe(tokens[2]);
-                    BigDecimal price = parseBigDecimalSafe(tokens[3]);
+                    BigDecimal price = parseBigDecimalSafe(tokens[8]); // standard_unit_price
 
                     if (ingredientId != null && price != null) {
                         PriceInfo existing = result.get(ingredientId);
@@ -265,10 +265,10 @@ public class CostCsvDataLoader {
             while ((line = br.readLine()) != null) {
                 if (line.trim().isEmpty()) continue;
                 String[] tokens = parseCsvLine(line);
-                if (tokens.length >= 4) {
+                if (tokens.length >= 6) {
                     Long ingredientId = parseLongSafe(tokens[1]);
-                    LocalDate targetDate = parseLocalDateSafe(tokens[2]);
-                    BigDecimal predictedPrice = parseBigDecimalSafe(tokens[3]);
+                    LocalDate targetDate = parseLocalDateSafe(tokens[3]); // target_date
+                    BigDecimal predictedPrice = parseBigDecimalSafe(tokens[5]); // predicted_price
 
                     if (ingredientId != null && targetDate != null && predictedPrice != null) {
                         String key = targetDate + ":" + ingredientId;
@@ -356,7 +356,8 @@ public class CostCsvDataLoader {
                     BigDecimal budgetAmount = parseBigDecimalSafe(tokens[3]);
 
                     if (facilityId != null && !monthStr.isEmpty() && budgetAmount != null) {
-                        YearMonth budgetMonth = YearMonth.parse(monthStr);
+                        String ymStr = monthStr.length() >= 7 ? monthStr.substring(0, 7) : monthStr;
+                        YearMonth budgetMonth = YearMonth.parse(ymStr);
                         String facilityName = facilityNameMap.getOrDefault(facilityId, "시설#" + facilityId);
                         FacilityBudgetVo vo = new FacilityBudgetVo(facilityId, facilityName, budgetMonth, budgetAmount);
                         result.put(facilityId + ":" + budgetMonth, vo);
@@ -378,13 +379,14 @@ public class CostCsvDataLoader {
             while ((line = br.readLine()) != null) {
                 if (line.trim().isEmpty()) continue;
                 String[] tokens = parseCsvLine(line);
-                if (tokens.length >= 6) {
+                if (tokens.length >= 7) {
                     Long planId = parseLongSafe(tokens[0]);
                     Long facilityId = parseLongSafe(tokens[1]);
-                    LocalDate planDate = parseLocalDateSafe(tokens[2]);
-                    String mealType = tokens[3].trim();
-                    Integer mealCount = parseIntSafe(tokens[4]);
-                    BigDecimal fallbackCost = parseBigDecimalSafe(tokens[5]);
+                    // tokens[2]는 created_by
+                    LocalDate planDate = parseLocalDateSafe(tokens[3]);
+                    String mealType = tokens[4].trim();
+                    Integer mealCount = parseIntSafe(tokens[5]);
+                    BigDecimal fallbackCost = parseBigDecimalSafe(tokens[6]);
 
                     if (planId != null && facilityId != null && planDate != null) {
                         result.add(new RawMealPlanInfo(

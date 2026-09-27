@@ -27,24 +27,30 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 /**
- * 인메모리 및 DB 연동 기반의 CostRepository 구현체
- * 마스터 데이터(메뉴, 시설)는 실제 DB 저장소를 우선 조회하며,
- * 식재료 상세 및 예측 가격은 CostCsvDataLoader가 파싱한 캐시 데이터를 활용하여 서빙합니다.
+ * [인메모리 및 DB 연동 기반의 CostRepository 구현체]
+ *
+ * ■ 데이터 소스 조회 우선순위 및 흐름 (Data Source Resolution Flow):
+ *   1. 마스터 데이터 (메뉴명, 시설명):
+ *      - 1순위: 실제 DB 저장소(MenuRepository, FacilityRepository) 조회
+ *      - 2순위: DB 조회 실패 또는 미존재 시 CSV Mock 캐시 데이터 fallback
+ *
+ *   2. 시계열 및 상세 데이터 (식재료 구성, 시세 및 예측단가, 식단 정보):
+ *      - CostCsvDataLoader가 초기화 시점에 로딩한 ConcurrentHashMap 캐시 데이터 활용
+ *
+ *   3. 실시간 식단 1인분 원가 산출:
+ *      - 식단 일자(planDate) 및 구성 메뉴의 식재료별 예측단가(predictedPriceMap)를 실시간 결합하여 산출
  */
 @Slf4j
 @Repository
+@SuppressWarnings("null")
 public class MemoryCostRepository implements CostRepository {
 
     @Value("${mock.csv.path:src/main/java/com/human/backend/cost/dummy}")
     private String mockCsvPath = "src/main/java/com/human/backend/cost/dummy";
 
     private final CostCsvDataLoader csvDataLoader;
-
-    @Autowired(required = false)
-    private MenuRepository menuRepository;
-
-    @Autowired(required = false)
-    private FacilityRepository facilityRepository;
+    private final MenuRepository menuRepository;
+    private final FacilityRepository facilityRepository;
 
     private final Map<Long, String> menuMap = new ConcurrentHashMap<>();
     private final Map<Long, List<MenuIngredientCostVo>> menuIngredientsMap = new ConcurrentHashMap<>();
@@ -57,16 +63,25 @@ public class MemoryCostRepository implements CostRepository {
 
     public MemoryCostRepository() {
         this.csvDataLoader = new CostCsvDataLoader();
+        this.menuRepository = null;
+        this.facilityRepository = null;
     }
 
     @Autowired
-    public MemoryCostRepository(CostCsvDataLoader csvDataLoader) {
+    public MemoryCostRepository(
+            @Autowired(required = false) CostCsvDataLoader csvDataLoader,
+            @Autowired(required = false) MenuRepository menuRepository,
+            @Autowired(required = false) FacilityRepository facilityRepository) {
         this.csvDataLoader = csvDataLoader != null ? csvDataLoader : new CostCsvDataLoader();
+        this.menuRepository = menuRepository;
+        this.facilityRepository = facilityRepository;
     }
 
     public MemoryCostRepository(String mockCsvPath) {
         this.mockCsvPath = mockCsvPath;
         this.csvDataLoader = new CostCsvDataLoader();
+        this.menuRepository = null;
+        this.facilityRepository = null;
     }
 
     public MemoryCostRepository(String mockCsvPath, MenuRepository menuRepository, FacilityRepository facilityRepository) {

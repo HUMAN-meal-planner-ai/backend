@@ -23,14 +23,27 @@ import static com.human.backend.cost.util.CostCalculationUtils.*;
 import static com.human.backend.cost.util.CostConstants.*;
 
 /**
- * 주간 및 월간 식단 식재료비 집계 전담 서비스
- * 담당 요구사항:
- * - COST-012: 선택 주차 7일 식단의 최신·예측 단가 기준 총 예상 식재료비를 계산한다.
- * - COST-013: 주별 예상 비용을 합산하여 월간 총 예상 식재료비를 계산한다.
+ * [주간 및 월간 식단 식재료비 집계 전담 서비스]
+ *
+ * ■ 담당 요구사항:
+ *   - COST-012: 선택 주차 7일 식단의 최신·예측 단가 기준 총 예상 식재료비를 계산한다.
+ *   - COST-013: 주별 예상 비용을 합산하여 월간 총 예상 식재료비를 계산한다.
+ *
+ * ■ 집계 처리 흐름 (Aggregation Flow):
+ *   1. [COST-012 주간 7일 식단 식재료비 산출]
+ *      - 주차 시작일(월요일) ~ 종료일(일요일) 7일간의 식단(MealPlanCostVo) 조회
+ *      - 일자별(Daily) 끼니(조/중/석식)별 예상 1인분 단가 * 식수 인원 곱연산 합산
+ *      - 7일간 총 식재료비 합계, 총 식수 인원, 1인 평균 단가 산출
+ *
+ *   2. [COST-013 월간 주차별 식단 식재료비 및 예산 분석]
+ *      - 해당 연월의 1일(monthStart)부터 말일(monthEnd)까지 주 단위(일요일 기준) 분할
+ *      - 주차별 식단 목록 조회 및 주별 소요 비용/식수 집계 (1주차 ~ N주차)
+ *      - 월 총 예상 식재료비 합산 및 월 배정 예산 대비 잔여액/소진율(budgetUsageRate) 도출
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class MealPlanCostService {
 
     private final CostRepository costRepository;

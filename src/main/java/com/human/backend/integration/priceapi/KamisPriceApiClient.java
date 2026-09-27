@@ -23,14 +23,12 @@ public class KamisPriceApiClient {
     private final JsonMapper objectMapper;
     private final String apiKey;
     private final String apiId;
-    private final String countryCode;
     private final String convertKgYn;
 
     public KamisPriceApiClient(
             @Value("${kamis.api.url}") String apiUrl,
             @Value("${kamis.api.key}") String apiKey,
             @Value("${kamis.api.id}") String apiId,
-            @Value("${kamis.api.country-code:1101}") String countryCode,
             @Value("${kamis.api.convert-kg-yn:Y}") String convertKgYn,
             JsonMapper objectMapper) {
         this.restClient = RestClient.builder()
@@ -38,7 +36,6 @@ public class KamisPriceApiClient {
                 .build();
         this.apiKey = apiKey;
         this.apiId = apiId;
-        this.countryCode = countryCode;
         this.convertKgYn = convertKgYn;
         this.objectMapper = objectMapper;
     }
@@ -56,7 +53,8 @@ public class KamisPriceApiClient {
                         .queryParam("p_itemcode", series.getSourceItemCode())
                         .queryParam("p_kindcode", series.getSourceKindCode())
                         .queryParam("p_productrankcode", series.getSourceRankCode())
-                        .queryParam("p_countrycode", countryCode)
+                        .queryParam("p_countrycode",
+                                KamisRegion.fromSeriesRegion(series.getRegion()).countryCode())
                         .queryParam("p_convert_kg_yn", convertKgYn)
                         .queryParam("p_cert_key", apiKey)
                         .queryParam("p_cert_id", apiId)

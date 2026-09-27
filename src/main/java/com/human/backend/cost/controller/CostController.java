@@ -9,7 +9,6 @@ import com.human.backend.cost.dto.response.MenuRiskResponse;
 import com.human.backend.cost.dto.response.MonthlyMealPlanCostResponse;
 import com.human.backend.cost.dto.response.WeeklyMealPlanCostResponse;
 import com.human.backend.cost.service.CostService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,12 +18,38 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * 원가 및 예산 분석 REST Controller
- * 담당 요구사항:
- * - MENU-008: 현재 및 예측 단가를 기준으로 메뉴의 1인분 예상 원가를 표시한다.
- * - MENU-009: 메뉴 구성 주요 식재료의 가격 위험을 종합해 메뉴 위험도를 표시한다.
- * - COST-001 ~ COST-006: 메뉴 원가 계산, 비교 및 상승 기여 식재료 분석
- * - COST-012 ~ COST-014: 주간/월간 식단 식재료비 및 예산 사용률 분석
+ * [원가 및 예산 분석 REST Controller]
+ *
+ * ■ 전체 아키텍처 흐름 (Architecture Flow):
+ *   [Client Request] ──> [CostController] ──> [CostService (Facade)]
+ *                                                   ├──> [MenuCostService]      : 메뉴 원가 계산
+ *                                                   ├──> [MenuRiskService]      : 원가 비교 & 위험도 분석
+ *                                                   ├──> [MealPlanCostService]  : 주간/월간 식단 비용
+ *                                                   └──> [BudgetAnalysisService]: 예산 위험 & 사용률
+ *                                                                 │
+ *                                                                 ▼
+ *                                                        [CostRepository] (DB + CSV Mock)
+ *
+ * ■ 제공 API 엔드포인트 분류 및 요구사항 매핑:
+ * 1. 메뉴 원가 산출 (MENU-008, COST-001~004, COST-009)
+ *    - GET /api/cost/menus                 : 전체 메뉴 현재 원가 일괄 조회
+ *    - GET /api/cost/menus/{menuId}        : 특정 메뉴 현재 원가 단건 조회
+ *    - GET /api/cost/menus/future          : 전체 메뉴 미래 예측 원가 일괄 조회
+ *    - GET /api/cost/menus/{menuId}/future : 특정 메뉴 미래 예측 원가 단건 조회
+ *
+ * 2. 원가 변동 비교 및 위험 분석 (MENU-009, COST-005, COST-006)
+ *    - GET /api/cost/menus/{menuId}/comparison : 현재 vs 미래 원가 비교 및 상승률
+ *    - GET /api/cost/menus/comparison          : 전체 메뉴 원가 변동 비교 일괄 조회
+ *    - GET /api/cost/menus/{menuId}/drivers    : 원가 상승 주요 기여 식재료(Cost Driver) 식별
+ *    - GET /api/cost/menus/drivers             : 전체 메뉴 Cost Driver 일괄 조회
+ *    - GET /api/cost/menus/{menuId}/risk       : 메뉴 가격 위험도(WARNING/CAUTION/SAFE) 종합 진단
+ *    - GET /api/cost/menus/risk                : 전체 메뉴 위험도 일괄 조회
+ *
+ * 3. 식단 식재료비 및 예산 관리 (BUDG-002, COST-012~014)
+ *    - GET /api/cost/weekly-plan-cost          : 주간 7일 식단 총 예상 식재료비 (COST-012)
+ *    - GET /api/cost/monthly-plan-cost         : 월간 주차별 식재료비 & 예산 잔여액 (COST-013)
+ *    - GET /api/cost/budget-risk               : 향후 2주간 예산 초과 위험 경고 분석 (BUDG-002)
+ *    - GET /api/cost/budget-usage              : 월 배정 예산 대비 예상 사용액 & 사용률 (COST-014)
  */
 @RestController
 @RequestMapping("/api/cost")

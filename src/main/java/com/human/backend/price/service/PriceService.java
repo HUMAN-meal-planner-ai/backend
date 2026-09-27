@@ -25,16 +25,19 @@ public class PriceService {
     private final PriceSeriesRepository priceSeriesRepository;
     private final PriceStorageService priceStorageService;
     private final KamisPriceValueParser valueParser;
+    private final KamisRegionalPriceSelector regionalPriceSelector;
 
     public PriceService(
             KamisPriceApiClient kamisPriceApiClient,
             PriceSeriesRepository priceSeriesRepository,
             PriceStorageService priceStorageService,
-            KamisPriceValueParser valueParser) {
+            KamisPriceValueParser valueParser,
+            KamisRegionalPriceSelector regionalPriceSelector) {
         this.kamisPriceApiClient = kamisPriceApiClient;
         this.priceSeriesRepository = priceSeriesRepository;
         this.priceStorageService = priceStorageService;
         this.valueParser = valueParser;
+        this.regionalPriceSelector = regionalPriceSelector;
     }
 
     public PriceCollectionResult collectOne(
@@ -47,6 +50,22 @@ public class PriceService {
                     "활성 KAMIS 가격 시계열을 찾을 수 없습니다. 식재료 코드: " + ingredientCode);
         }
 
+        List<PriceTargetCollectionResult> targetResults = collectTargets(
+                seriesList, startDate, endDate);
+
+        return aggregate(ingredientCode, startDate, endDate, targetResults);
+    }
+
+    public List<PriceTargetCollectionResult> collectAll(
+            LocalDate startDate, LocalDate endDate) {
+        validateDateRange(startDate, endDate);
+        List<PriceSeries> seriesList = priceSeriesRepository
+                .findAllActiveKamisCollectionTargets();
+        return collectTargets(seriesList, startDate, endDate);
+    }
+
+    private List<PriceTargetCollectionResult> collectTargets(
+            List<PriceSeries> seriesList, LocalDate startDate, LocalDate endDate) {
         List<PriceTargetCollectionResult> targetResults = new ArrayList<>();
         for (PriceSeries series : seriesList) {
             try {
@@ -60,8 +79,7 @@ public class PriceService {
                 targetResults.add(failedResult(series, exception));
             }
         }
-
-        return aggregate(ingredientCode, startDate, endDate, targetResults);
+        return List.copyOf(targetResults);
     }
 
     private PriceTargetCollectionResult collectSeries(
@@ -82,18 +100,19 @@ public class PriceService {
                 .filter(item -> item.itemName() != null)
                 .filter(item -> item.marketName() != null)
                 .toList();
+        List<KamisPriceItemDto> regionalItems = regionalPriceSelector.select(series, actualItems);
 
-        List<KamisPriceItemDto> inRangeItems = actualItems.stream()
+        List<KamisPriceItemDto> inRangeItems = regionalItems.stream()
                 .filter(item -> isInRequestedRange(item, startDate, endDate))
                 .toList();
-        int outOfRangeRowsSkipped = actualItems.size() - inRangeItems.size();
+        int outOfRangeRowsSkipped = regionalItems.size() - inRangeItems.size();
 
         PriceStorageService.StoreResult stored = priceStorageService.store(series, inRangeItems);
         return new PriceTargetCollectionResult(
                 series.getId(), series.getSourceCategoryCode(), series.getSourceItemCode(),
                 series.getSourceKindCode(), series.getVariety(),
                 series.getSourceRankCode(), series.getGrade(), true, null,
-                actualItems.size(), outOfRangeRowsSkipped,
+                regionalItems.size(), outOfRangeRowsSkipped,
                 stored.seriesCreated(), stored.pricesInserted(),
                 stored.duplicatesSkipped(), stored.invalidRowsSkipped());
     }
