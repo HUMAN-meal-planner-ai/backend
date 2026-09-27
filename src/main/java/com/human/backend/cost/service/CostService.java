@@ -169,4 +169,100 @@ public class CostService {
     public BudgetUsageRateResponse evaluateBudgetUsage(Long facilityId, String yearMonthStr, LocalDate baseDate) {
         return budgetAnalysisService.evaluateBudgetUsage(facilityId, yearMonthStr, baseDate);
     }
+
+    // ==========================================
+    // 4. 대체 메뉴 원가 비교 분석 (BUDG-005 연동)
+    // ==========================================
+
+    /**
+     * [BUDG-005] 기존 메뉴와 대체 메뉴 간의 1인분 예상 단가, 총 식수 비용 차이 및 절감액 분석
+     */
+    public com.human.backend.cost.dto.response.MenuReplacementDiffResponse compareMenuReplacementCost(
+            Long originalMenuId, Long replacementMenuId, LocalDate targetDate, Integer mealCount) {
+
+        int validMealCount = (mealCount != null && mealCount > 0) ? mealCount : 1;
+
+        // 1. 기존 메뉴 및 대체 메뉴 1인분 원가 계산
+        MenuCostResponse origCost = (targetDate != null)
+                ? calculateFutureMenuCost(originalMenuId, targetDate, 1, null)
+                : calculateCurrentMenuCost(originalMenuId, 1, null);
+
+        MenuCostResponse replCost = (targetDate != null)
+                ? calculateFutureMenuCost(replacementMenuId, targetDate, 1, null)
+                : calculateCurrentMenuCost(replacementMenuId, 1, null);
+
+        BigDecimal origUnit = (origCost != null && origCost.getCostPerPerson() != null)
+                ? origCost.getCostPerPerson() : BigDecimal.ZERO;
+        BigDecimal replUnit = (replCost != null && replCost.getCostPerPerson() != null)
+                ? replCost.getCostPerPerson() : BigDecimal.ZERO;
+
+        // 2. 1인분 차액 및 절감액 계산 (양수: 절감, 음수: 원가 상승)
+        BigDecimal diffUnit = origUnit.subtract(replUnit);
+        BigDecimal savingsUnit = diffUnit.compareTo(BigDecimal.ZERO) > 0 ? diffUnit : BigDecimal.ZERO;
+
+        // 변동률: |orig - repl| / orig * 100
+        BigDecimal diffRate = BigDecimal.ZERO;
+        if (origUnit.compareTo(BigDecimal.ZERO) > 0) {
+            diffRate = diffUnit.abs()
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(origUnit, 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        // 3. 총 식수 기준 총액 및 총 절감액
+        BigDecimal mealCountBd = BigDecimal.valueOf(validMealCount);
+        BigDecimal origTotal = origUnit.multiply(mealCountBd).setScale(0, java.math.RoundingMode.HALF_UP);
+        BigDecimal replTotal = replUnit.multiply(mealCountBd).setScale(0, java.math.RoundingMode.HALF_UP);
+        BigDecimal totalSavings = diffUnit.multiply(mealCountBd).setScale(0, java.math.RoundingMode.HALF_UP);
+
+        // 4. 상태 판정
+        String status;
+        if (diffUnit.compareTo(BigDecimal.ZERO) > 0) {
+            status = "SAVINGS";
+        } else if (diffUnit.compareTo(BigDecimal.ZERO) < 0) {
+            status = "INCREASED";
+        } else {
+            status = "UNCHANGED";
+        }
+
+        // 5. 대체 메뉴의 가격 리스크 진단 연동
+        String riskLevel = "SAFE";
+        boolean isRisk = false;
+        BigDecimal increaseRate = BigDecimal.ZERO;
+
+        try {
+            LocalDate riskDate = (targetDate != null) ? targetDate : LocalDate.now();
+            MenuRiskResponse riskResponse = evaluateMenuRisk(replacementMenuId, riskDate);
+            if (riskResponse != null) {
+                riskLevel = riskResponse.getRiskLevel();
+                isRisk = riskResponse.isRisk();
+                increaseRate = riskResponse.getIncreaseRate();
+            }
+        } catch (Exception e) {
+            // 리스크 조회 실패 시 SAFE 기본값 유지
+        }
+
+        String origName = (origCost != null) ? origCost.getMenuName() : ("메뉴#" + originalMenuId);
+        String replName = (replCost != null) ? replCost.getMenuName() : ("메뉴#" + replacementMenuId);
+
+        return com.human.backend.cost.dto.response.MenuReplacementDiffResponse.builder()
+                .originalMenuId(originalMenuId)
+                .originalMenuName(origName)
+                .originalCostPerPerson(origUnit)
+                .replacementMenuId(replacementMenuId)
+                .replacementMenuName(replName)
+                .replacementCostPerPerson(replUnit)
+                .targetDate(targetDate)
+                .mealCount(validMealCount)
+                .costDiffPerPerson(diffUnit)
+                .savingsPerPerson(savingsUnit)
+                .diffRate(diffRate)
+                .originalTotalCost(origTotal)
+                .replacementTotalCost(replTotal)
+                .totalSavings(totalSavings)
+                .savingsStatus(status)
+                .replacementRiskLevel(riskLevel)
+                .replacementIsRisk(isRisk)
+                .replacementIncreaseRate(increaseRate)
+                .build();
+    }
 }

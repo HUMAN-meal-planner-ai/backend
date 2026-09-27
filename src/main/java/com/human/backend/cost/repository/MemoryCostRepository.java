@@ -243,6 +243,14 @@ public class MemoryCostRepository implements CostRepository {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    public List<Long> findMenuIdsByPlanId(Long planId) {
+        if (planId == null) {
+            return Collections.emptyList();
+        }
+        return planMenuItemsMap.getOrDefault(planId, Collections.emptyList());
+    }
+
     /**
      * 식단에 포함된 메뉴들의 식재료 예측가/최신 단가를 실시간 곱연산하여 1인분 원가 산출
      */

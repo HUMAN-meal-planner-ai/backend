@@ -49,5 +49,10 @@ public interface CostRepository {
      * 시설의 특정 기간 내 식단 계획 및 예상 단가 목록 조회
      */
     List<MealPlanCostVo> findMealPlansByFacilityAndDateRange(Long facilityId, LocalDate startDate, LocalDate endDate);
+
+    /**
+     * 식단 계획(Plan ID)에 포함된 메뉴 ID 목록 조회
+     */
+    List<Long> findMenuIdsByPlanId(Long planId);
 }
 
