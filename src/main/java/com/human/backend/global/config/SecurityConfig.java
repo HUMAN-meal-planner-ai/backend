@@ -73,7 +73,12 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(List.of("http://localhost:5173"));
+        // 개발 서버는 브라우저를 여는 방식에 따라 localhost 또는 127.0.0.1로 표시됩니다.
+        // 두 주소는 같은 PC를 가리키지만 브라우저는 서로 다른 Origin으로 구분하므로 모두 허용합니다.
+        config.setAllowedOrigins(List.of(
+            "http://localhost:5173",
+            "http://127.0.0.1:5173"
+        ));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

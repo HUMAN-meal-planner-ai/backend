@@ -5,7 +5,9 @@ import java.io.StringWriter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -30,9 +32,13 @@ public class ErrorLogService {
     private static final int MAX_STACK_TRACE_LENGTH = 16_000;
 
     private final ErrorLogRepository errorLogRepository;
+    private final boolean databaseEnabled;
 
-    public ErrorLogService(ErrorLogRepository errorLogRepository) {
+    public ErrorLogService(
+            ErrorLogRepository errorLogRepository,
+            @Value("${app.error-log.database-enabled:false}") boolean databaseEnabled) {
         this.errorLogRepository = errorLogRepository;
+        this.databaseEnabled = databaseEnabled;
     }
 
     /**
@@ -45,6 +51,15 @@ public class ErrorLogService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(Exception exception, int httpStatus, String errorCode,
             HttpServletRequest request, UserPrincipal principal) {
+        // 현재 Supabase에 error_log 테이블이 준비되지 않은 개발 환경에서는
+        // DB에 접근하지 않고 콘솔에 요청 정보와 예외를 남깁니다.
+        if (!databaseEnabled) {
+            log.error("Server error [{} {}] status={} code={} user={}",
+                request.getMethod(), request.getRequestURI(), httpStatus, errorCode,
+                principal == null ? "anonymous" : principal.email(), exception);
+            return;
+        }
+
         try {
             // printStackTrace는 기본적으로 콘솔용 출력이므로 StringWriter를 이용해 DB 저장용 문자열로 변환합니다.
             StringWriter writer = new StringWriter();
@@ -75,6 +90,11 @@ public class ErrorLogService {
     public Page<ErrorLogSummaryResponse> getLogs(Boolean resolved, int page, int size) {
         // 대량 조회로 서버가 느려지는 것을 방지하기 위해 한 번에 최대 100건만 허용합니다.
         PageRequest pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "occurredAt"));
+        // DB 저장이 꺼진 동안에는 조회 쿼리도 실행하지 않습니다.
+        // 관리 화면을 테스트할 수 있도록 정상적인 빈 페이지 형식을 반환합니다.
+        if (!databaseEnabled) {
+            return new PageImpl<>(java.util.List.of(), pageable, 0);
+        }
         Page<ErrorLog> logs = resolved == null
             ? errorLogRepository.findAll(pageable)
             : errorLogRepository.findByResolved(resolved, pageable);
@@ -84,12 +104,14 @@ public class ErrorLogService {
 
     @Transactional(readOnly = true)
     public ErrorLogDetailResponse getLog(Long id) {
+        ensureDatabaseEnabled();
         // 상세 조회에서만 stackTrace를 포함합니다.
         return ErrorLogDetailResponse.from(find(id));
     }
 
     @Transactional
     public ErrorLogDetailResponse resolve(Long id, Long adminUserId) {
+        ensureDatabaseEnabled();
         ErrorLog errorLog = find(id);
         // 트랜잭션 안에서 엔티티 값을 변경하면 JPA 변경 감지(dirty checking)가 UPDATE SQL을 실행합니다.
         errorLog.resolve(adminUserId);
@@ -99,6 +121,14 @@ public class ErrorLogService {
     private ErrorLog find(Long id) {
         return errorLogRepository.findById(id)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ERROR_LOG_NOT_FOUND", "오류 로그를 찾을 수 없습니다."));
+    }
+
+    /** 임시 비활성화 상태에서 상세/처리 API가 DB 쿼리를 실행하지 않도록 차단합니다. */
+    private void ensureDatabaseEnabled() {
+        if (!databaseEnabled) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "ERROR_LOG_DATABASE_DISABLED",
+                "오류 로그 DB 기능이 현재 비활성화되어 있습니다.");
+        }
     }
 
     /** DB 컬럼 길이 초과 때문에 오류 로그 저장 자체가 실패하는 상황을 예방합니다. */
