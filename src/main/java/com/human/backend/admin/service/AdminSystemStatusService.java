@@ -13,6 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import com.human.backend.admin.dto.response.AdminSystemStatusResponse;
+import com.human.backend.admin.dto.response.AdminPriceDataStatusResponse;
 import com.human.backend.admin.dto.response.SystemServiceStatusResponse;
 
 /**
@@ -26,6 +27,7 @@ public class AdminSystemStatusService {
     private static final String DOWN = "DOWN";
 
     private final JdbcTemplate jdbcTemplate;
+    private final AdminPriceDataService adminPriceDataService;
     private final HttpClient httpClient;
     private final String kamisApiUrl;
     private final String aiServerUrl;
@@ -33,10 +35,12 @@ public class AdminSystemStatusService {
 
     public AdminSystemStatusService(
             JdbcTemplate jdbcTemplate,
+            AdminPriceDataService adminPriceDataService,
             @Value("${kamis.api.url}") String kamisApiUrl,
             @Value("${ai.server.url:http://localhost:8000}") String aiServerUrl,
             @Value("${admin.health.request-timeout:3s}") Duration requestTimeout) {
         this.jdbcTemplate = jdbcTemplate;
+        this.adminPriceDataService = adminPriceDataService;
         this.kamisApiUrl = kamisApiUrl;
         this.aiServerUrl = aiServerUrl;
         this.requestTimeout = requestTimeout;
@@ -53,6 +57,7 @@ public class AdminSystemStatusService {
                 new SystemServiceStatusResponse("backend", "Spring 백엔드", UP,
                         "관리자 API가 정상적으로 응답했습니다.", 0),
                 checkDatabase(),
+                checkPriceData(),
                 checkHttpService("kamis", "KAMIS 가격 API", kamisApiUrl),
                 checkHttpService("ai", "FastAPI AI 서버", appendPath(aiServerUrl, "/api/health")));
 
@@ -60,6 +65,30 @@ public class AdminSystemStatusService {
         String overallStatus = services.stream().allMatch(service -> UP.equals(service.status()))
                 ? UP : "DEGRADED";
         return new AdminSystemStatusResponse(overallStatus, Instant.now(), services);
+    }
+
+    private SystemServiceStatusResponse checkPriceData() {
+        // 외부 연결 상태뿐 아니라 서비스 운영에 필요한 실제 가격 데이터가 최신인지도 함께 점검합니다.
+        long startedAt = System.nanoTime();
+        try {
+            AdminPriceDataStatusResponse priceData = adminPriceDataService.getStatus();
+            // 관리자 가격 API의 세 단계 상태 중 UP만 시스템 정상으로 취급합니다.
+            boolean available = UP.equals(priceData.status());
+            // 화면에서 원인을 바로 파악할 수 있도록 상태별로 기준일이나 저장 건수를 포함합니다.
+            String message = switch (priceData.status()) {
+                case "UP" -> "최신 기준일 " + priceData.latestPriceDate()
+                        + ", 전체 " + priceData.totalPriceCount() + "건이 저장되어 있습니다.";
+                case "STALE" -> "가격 데이터가 " + priceData.latestPriceDate()
+                        + " 이후 갱신되지 않았습니다.";
+                default -> "저장된 가격 데이터가 없습니다.";
+            };
+            // 시스템 상태는 UP/DOWN 두 단계이므로 STALE과 NO_DATA를 운영 점검이 필요한 DOWN으로 표시합니다.
+            return status("price-data", "가격 수집 데이터", available, message, startedAt);
+        } catch (RuntimeException exception) {
+            // 집계 쿼리 실패가 전체 상태 API의 500 오류로 번지지 않도록 개별 DOWN 결과로 바꿉니다.
+            return status("price-data", "가격 수집 데이터", false,
+                    "가격 데이터 현황을 확인할 수 없습니다.", startedAt);
+        }
     }
 
     private SystemServiceStatusResponse checkDatabase() {
