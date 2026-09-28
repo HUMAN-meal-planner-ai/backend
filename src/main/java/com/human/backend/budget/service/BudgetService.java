@@ -111,7 +111,7 @@ public class BudgetService {
             collectFromCostRepositoryPlans(weeklyPlans, accumulatorMap);
         } else if (mealPlanService != null) {
             // DB/CSV 식단이 없을 경우 MealPlanService에 저장된 동적 주간 식단 연동 시도
-            tryCollectFromMealPlanService(weekMonday, accumulatorMap);
+            tryCollectFromMealPlanService(weekMonday, targetFacilityId, accumulatorMap);
         }
 
         // 4. 주간 식단 전체 총 비용 및 식수 집계
@@ -277,9 +277,12 @@ public class BudgetService {
     /**
      * MealPlanService에 저장된 동적 식단으로부터 데이터 수집 (Fallback 지원)
      */
-    private void tryCollectFromMealPlanService(LocalDate weekMonday, Map<Long, MenuAccumulator> accumulatorMap) {
+    private void tryCollectFromMealPlanService(
+            LocalDate weekMonday,
+            Long facilityId,
+            Map<Long, MenuAccumulator> accumulatorMap) {
         try {
-            MealPlanResponse response = mealPlanService.findWeeklyPlan(weekMonday);
+            MealPlanResponse response = mealPlanService.findWeeklyPlan(weekMonday, facilityId);
             if (response != null && response.meals() != null) {
                 int mealCount = response.mealCount() != null ? response.mealCount() : 1;
                 for (MealPlanResponse.MealResponse meal : response.meals()) {
