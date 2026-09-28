@@ -126,7 +126,7 @@ public class WeeklyPlanBudgetVerificationService {
         } else {
             // (B) 저장된 재구성 주간 식단(MealPlanService) 또는 기본 식단 기준 조회
             try {
-                MealPlanResponse savedPlan = mealPlanService.findWeeklyPlan(weekMonday);
+                MealPlanResponse savedPlan = mealPlanService.findWeeklyPlan(weekMonday, targetFacilityId);
                 for (MealPlanResponse.MealResponse meal : savedPlan.meals()) {
                     BigDecimal unitPrice = meal.costPerPerson() != null ? meal.costPerPerson() : BigDecimal.ZERO;
                     BigDecimal dailyTotal = unitPrice.multiply(BigDecimal.valueOf(mealCount));
