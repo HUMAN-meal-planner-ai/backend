@@ -206,5 +206,18 @@ public class CostController {
         BudgetUsageRateResponse response = costService.evaluateBudgetUsage(facilityId, yearMonth, baseDate);
         return ResponseEntity.ok(response);
     }
+
+    // 13. 기존 메뉴 vs 대체 메뉴 원가 차이 및 절감액 조회 API (BUDG-005 / COST 연동)
+    // 예시 호출: GET /api/cost/menus/9/replacement-diff?replacementMenuId=15&targetDate=2026-09-17&mealCount=100
+    @GetMapping("/menus/{originalMenuId}/replacement-diff")
+    public ResponseEntity<com.human.backend.cost.dto.response.MenuReplacementDiffResponse> getMenuReplacementDiff(
+            @PathVariable("originalMenuId") Long originalMenuId,
+            @RequestParam(name = "replacementMenuId") Long replacementMenuId,
+            @RequestParam(name = "targetDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate targetDate,
+            @RequestParam(name = "mealCount", defaultValue = "1") Integer mealCount) {
+        com.human.backend.cost.dto.response.MenuReplacementDiffResponse response =
+                costService.compareMenuReplacementCost(originalMenuId, replacementMenuId, targetDate, mealCount);
+        return ResponseEntity.ok(response);
+    }
 }
 

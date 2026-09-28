@@ -115,11 +115,8 @@ public class MenuRiskService {
                     .build());
         }
 
-        log.info("==================================================");
-        log.info(">> [원가 비교 분석] 메뉴: {} (ID: {}) | 기준일: {}", current.getMenuName(), menuId, validTargetDate);
-        log.info(">> 현재 1인분: {}원 -> 미래 1인분: {}원 | 차액: {}원 (상승률: {}%)",
-                currentPerPerson, futurePerPerson, costDifference, increaseRate);
-        log.info("--------------------------------------------------");
+        log.debug(">> [원가 비교 분석] 메뉴: {} (ID: {}) | 현재 1인분: {}원 -> 미래 1인분: {}원 | 차액: {}원 (상승률: {}%)",
+                current.getMenuName(), menuId, currentPerPerson, futurePerPerson, costDifference, increaseRate);
 
         return MenuCostComparisonResponse.builder()
                 .menuId(menuId)
@@ -239,13 +236,8 @@ public class MenuRiskService {
 
         CostDriverResponse.IngredientDriver topDriver = rankedDrivers.isEmpty() ? null : rankedDrivers.get(0);
 
-        log.info("==================================================");
-        log.info(">> [Cost Driver 분석] 메뉴: {} (ID: {}) | 기준일: {}", current.getMenuName(), menuId, validTargetDate);
-        if (topDriver != null) {
-            log.info(">> 🔥 [최대 상승 기여 식재료 (Top 1)]: [{}] (상승액: {}원, 기여율: {}%)",
-                    topDriver.getIngredientName(), topDriver.getLineCostDifference(), topDriver.getContributionRate());
-        }
-        log.info("--------------------------------------------------");
+        log.debug(">> [Cost Driver 분석] 메뉴: {} (ID: {}) | Top Driver: {}", current.getMenuName(), menuId,
+                topDriver != null ? topDriver.getIngredientName() : "없음");
 
         return CostDriverResponse.builder()
                 .menuId(menuId)
@@ -391,10 +383,8 @@ public class MenuRiskService {
             riskSummary = "메뉴 구성 식재료의 가격 변동이 안정적이며 위험도가 낮습니다.";
         }
 
-        log.info("==================================================");
-        log.info(">> [MENU-009 메뉴 위험도 종합 진단] 메뉴: {} (ID: {}) | 기준일: {}", current.getMenuName(), menuId, validTargetDate);
-        log.info(">> 종합 위험등급: {} (점수: {}점, 위험여부: {})", riskLevel, riskScore, isRisk);
-        log.info("--------------------------------------------------");
+        log.debug(">> [MENU-009 메뉴 위험도 종합 진단] 메뉴: {} (ID: {}) | 종합 위험등급: {} (점수: {}점)",
+                current.getMenuName(), menuId, riskLevel, riskScore);
 
         return MenuRiskResponse.builder()
                 .menuId(menuId)
