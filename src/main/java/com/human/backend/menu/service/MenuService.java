@@ -80,5 +80,12 @@ public class MenuService {
     public List<MenuResponse> getMenus() {
         return menuRepository.getMenus();
     }
+    public List<MenuResponse> searchMenus(String keyword) {
+    if (keyword == null || keyword.isBlank()) {
+        return menuRepository.getMenus();
+    }
+
+    return menuRepository.searchMenus(keyword.trim());
+}
 
 }
