@@ -69,7 +69,10 @@ public class MenuCandidateDetectionService {
         Map<Long, MealPlanCostVo> planMenuMap = new HashMap<>();
         for (MealPlanCostVo plan : weeklyPlans) {
             if (plan.getPlanId() != null) {
-                planMenuMap.put(plan.getPlanId(), plan);
+                List<Long> menuIdsInPlan = costRepository.findMenuIdsByPlanId(plan.getPlanId());
+                for (Long mId : menuIdsInPlan) {
+                    planMenuMap.putIfAbsent(mId, plan);
+                }
             }
         }
 
