@@ -33,6 +33,8 @@ import com.human.backend.price.repository.PriceSeriesRepository.WeeklyRepresenta
 @Service
 public class PricePredictionService {
 
+    private static final BigDecimal BASE_PRICE_TOLERANCE = new BigDecimal("0.0000005");
+
     private final PriceSeriesRepository seriesRepository;
     private final AiPricePredictionClient client;
     private final PricePredictionStorageService storageService;
@@ -169,7 +171,8 @@ public class PricePredictionService {
         }
         if (!prediction.baseDate().equals(target.baseDate())
                 || !prediction.targetDate().equals(target.baseDate().plusDays(7))
-                || prediction.basePrice().compareTo(target.basePrice()) != 0) {
+                || prediction.basePrice().subtract(target.basePrice()).abs()
+                        .compareTo(BASE_PRICE_TOLERANCE) > 0) {
             throw invalidResponse("AI 주간 가격예측 기준 가격 또는 목표일이 요청과 일치하지 않습니다.");
         }
         if (!prediction.standardUnit().equalsIgnoreCase(target.standardUnit())) {

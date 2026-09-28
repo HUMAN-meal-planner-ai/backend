@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -23,21 +24,22 @@ import com.human.backend.prediction.service.PricePredictionService;
 class PricePredictionSchedulerTest {
 
     @Test
-    void delegatesWeeklyPredictionToExistingService() {
+    void delegatesWeeklyPredictionToSevenDayService() {
         PricePredictionService service = mock(PricePredictionService.class);
-        when(service.generateNextPredictions())
+        when(service.generateSevenDayPredictions())
                 .thenReturn(new PricePredictionCollectionResult(56, 56, 0, 56));
         PricePredictionScheduler scheduler = new PricePredictionScheduler(service);
 
         scheduler.generateWeeklyPredictions();
 
-        verify(service).generateNextPredictions();
+        verify(service).generateSevenDayPredictions();
+        verify(service, never()).generateNextPredictions();
     }
 
     @Test
     void logsFailureWithoutBreakingFutureScheduledExecutions() {
         PricePredictionService service = mock(PricePredictionService.class);
-        when(service.generateNextPredictions())
+        when(service.generateSevenDayPredictions())
                 .thenThrow(new IllegalStateException("예측 생성 실패"));
         PricePredictionScheduler scheduler = new PricePredictionScheduler(service);
         Logger logger = (Logger) LoggerFactory.getLogger(PricePredictionScheduler.class);
@@ -47,7 +49,7 @@ class PricePredictionSchedulerTest {
 
         try {
             assertDoesNotThrow(scheduler::generateWeeklyPredictions);
-            verify(service).generateNextPredictions();
+            verify(service).generateSevenDayPredictions();
             assertTrue(appender.list.stream().anyMatch(event ->
                     event.getLevel() == Level.ERROR
                             && event.getFormattedMessage().contains("주간 가격예측 생성에 실패했습니다")

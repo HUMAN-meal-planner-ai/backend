@@ -30,7 +30,7 @@ public class PricePredictionScheduler {
         log.info("주간 가격예측 생성을 시작합니다. 실행 시작 시각={}", startedAt);
 
         try {
-            PricePredictionCollectionResult result = service.generateNextPredictions();
+            PricePredictionCollectionResult result = service.generateSevenDayPredictions();
             log.info(
                     "주간 가격예측 생성을 완료했습니다. 실행 시작 시각={}, 소요 시간={}ms, "
                             + "대상={}, 응답={}, 신규 저장={}, 중복 제외={}",
