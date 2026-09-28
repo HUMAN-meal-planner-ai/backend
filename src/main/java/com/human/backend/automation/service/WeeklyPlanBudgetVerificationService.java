@@ -126,7 +126,7 @@ public class WeeklyPlanBudgetVerificationService {
         } else {
             // (B) 저장된 재구성 주간 식단(MealPlanService) 또는 기본 식단 기준 조회
             try {
-                MealPlanResponse savedPlan = mealPlanService.findWeeklyPlan(weekMonday);
+                MealPlanResponse savedPlan = mealPlanService.findWeeklyPlan(weekMonday, targetFacilityId);
                 for (MealPlanResponse.MealResponse meal : savedPlan.meals()) {
                     BigDecimal unitPrice = meal.costPerPerson() != null ? meal.costPerPerson() : BigDecimal.ZERO;
                     BigDecimal dailyTotal = unitPrice.multiply(BigDecimal.valueOf(mealCount));
@@ -144,13 +144,27 @@ public class WeeklyPlanBudgetVerificationService {
                 // 저장된 식단이 없을 경우 기존 식단 기반 단가 적용
                 reevaluatedWeeklyCost = originalWeeklyCost;
                 for (MealPlanCostVo planVo : originalPlans) {
-                    dailyBreakdown.add(WeeklyPlanReverificationResponse.DailyReevaluatedCostDetail.builder()
-                            .mealDate(planVo.getPlanDate())
-                            .menuId(planVo.getPlanId())
-                            .menuName(planVo.getMealType())
-                            .costPerPerson(planVo.getExpectedCostPerPerson())
-                            .totalCost(planVo.calculateTotalCost())
-                            .build());
+                    List<Long> menuIds = costRepository.findMenuIdsByPlanId(planVo.getPlanId());
+                    if (menuIds != null && !menuIds.isEmpty()) {
+                        for (Long mId : menuIds) {
+                            String mName = costRepository.findMenuNameById(mId).orElse(planVo.getMealType());
+                            dailyBreakdown.add(WeeklyPlanReverificationResponse.DailyReevaluatedCostDetail.builder()
+                                    .mealDate(planVo.getPlanDate())
+                                    .menuId(mId)
+                                    .menuName(mName)
+                                    .costPerPerson(planVo.getExpectedCostPerPerson())
+                                    .totalCost(planVo.calculateTotalCost())
+                                    .build());
+                        }
+                    } else {
+                        dailyBreakdown.add(WeeklyPlanReverificationResponse.DailyReevaluatedCostDetail.builder()
+                                .mealDate(planVo.getPlanDate())
+                                .menuId(planVo.getPlanId())
+                                .menuName(planVo.getMealType())
+                                .costPerPerson(planVo.getExpectedCostPerPerson())
+                                .totalCost(planVo.calculateTotalCost())
+                                .build());
+                    }
                 }
             }
         }

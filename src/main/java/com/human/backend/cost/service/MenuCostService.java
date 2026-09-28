@@ -61,9 +61,7 @@ public class MenuCostService {
                     "해당 메뉴에 등록된 식재료 구성 정보가 없습니다. ID=" + menuId);
         }
 
-        log.info("==================================================");
-        log.info(">> [메뉴 현재 원가 계산] 메뉴: {} (ID: {}) | 식재료 품목: {}개", menuName, menuId, items.size());
-        log.info("--------------------------------------------------");
+        log.debug(">> [메뉴 현재 원가 계산] 메뉴: {} (ID: {}) | 식재료 품목: {}개", menuName, menuId, items.size());
 
         BigDecimal costPerPerson = BigDecimal.ZERO;
         List<MenuCostResponse.IngredientDetail> detailList = new ArrayList<>();
@@ -74,9 +72,6 @@ public class MenuCostService {
 
             costPerPerson = costPerPerson.add(lineCost);
             detailList.add(detail);
-
-            log.info("   - [{}] 사용량: {}g | 단가: {}원/g | 재료원가: {}원 (누적: {}원)",
-                    item.getIngredientName(), item.getQuantity(), item.getStandardUnitPrice(), lineCost, costPerPerson);
         }
 
         BigDecimal totalMealCost = costPerPerson.multiply(BigDecimal.valueOf(validMealCount));
@@ -86,8 +81,7 @@ public class MenuCostService {
                 ? costPerPerson.subtract(validTargetCost)
                 : BigDecimal.ZERO;
 
-        log.info(">> [총 원가 산출] {} | 1인분: {}원 * 식수: {}명 = 총 {}원 (목표초과: {} / 초과액: {}원)",
-                menuName, costPerPerson, validMealCount, totalMealCost, isExceeded, exceededAmount);
+        log.debug(">> [총 원가 산출] {} | 1인분: {}원 * 식수: {}명 = 총 {}원", menuName, costPerPerson, validMealCount, totalMealCost);
 
         return MenuCostResponse.of(menuId, menuName, costPerPerson, validMealCount, totalMealCost,
                 validTargetCost, isExceeded, exceededAmount, detailList);
@@ -129,10 +123,7 @@ public class MenuCostService {
                     "해당 메뉴에 등록된 식재료 구성 정보가 없습니다. ID=" + menuId);
         }
 
-        log.info("==================================================");
-        log.info(">> [메뉴 미래 원가 계산] 메뉴: {} (ID: {}) | 기준일: {}", menuName, menuId, validTargetDate);
-        log.info(">> 식재료 품목 수: {}개", items.size());
-        log.info("--------------------------------------------------");
+        log.debug(">> [메뉴 미래 원가 계산] 메뉴: {} (ID: {}) | 기준일: {}", menuName, menuId, validTargetDate);
 
         BigDecimal costPerPerson = BigDecimal.ZERO;
         List<MenuCostResponse.IngredientDetail> detailList = new ArrayList<>();
@@ -143,10 +134,6 @@ public class MenuCostService {
 
             costPerPerson = costPerPerson.add(lineCost);
             detailList.add(detail);
-
-            log.info("   - [{}] 사용량: {}g | 예측단가: {}원/g (기준일: {}) | 재료원가: {}원 (누적: {}원)",
-                    item.getIngredientName(), item.getQuantity(), item.getStandardUnitPrice(), item.getPriceDate(),
-                    lineCost, costPerPerson);
         }
 
         BigDecimal totalMealCost = costPerPerson.multiply(BigDecimal.valueOf(validMealCount));
@@ -156,7 +143,7 @@ public class MenuCostService {
                 ? costPerPerson.subtract(validTargetCost)
                 : BigDecimal.ZERO;
 
-        log.info(">> [미래 총 원가 산출] {} | 기준일: {} | 1인분: {}원 * 식수: {}명 = 총 {}원",
+        log.debug(">> [미래 총 원가 산출] {} | 기준일: {} | 1인분: {}원 * 식수: {}명 = 총 {}원",
                 menuName, validTargetDate, costPerPerson, validMealCount, totalMealCost);
 
         return MenuCostResponse.of(menuId, menuName, validTargetDate, costPerPerson, validMealCount, totalMealCost,
