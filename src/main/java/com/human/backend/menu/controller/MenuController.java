@@ -9,8 +9,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-
-
 /** 메뉴 목록과 선택적인 식단 슬롯 필터를 제공하는 REST 컨트롤러입니다. */
 @RestController
 @RequestMapping("/api/menus")
@@ -22,20 +20,29 @@ public class MenuController {
         this.menuService = menuService;
     }
 
-    
     @GetMapping
     public List<MenuResponse> getMenus(
-        @RequestParam(name = "slot", required = false) String slot) {
+            @RequestParam(name = "slot", required = false) String slot) {
 
-    if (slot == null || slot.isBlank()) {
-        return menuService.getMenus(); //전체 메뉴 조회
+        if (slot == null || slot.isBlank()) {
+            return menuService.getMenus(); // 전체 메뉴 조회
+        }
+
+        /**
+         * GET /api/menus 또는 GET /api/menus?slot=SOUP 요청을 처리합니다.
+         * slot을 생략하면 전체 메뉴를, 전달하면 해당 식단 위치의 메뉴만 반환합니다.
+         */
+        return menuService.findMenus(slot); // 슬롯 필터
     }
-    
-    /**
-     * GET /api/menus 또는 GET /api/menus?slot=SOUP 요청을 처리합니다.
-     * slot을 생략하면 전체 메뉴를, 전달하면 해당 식단 위치의 메뉴만 반환합니다.
-     */
-    return menuService.findMenus(slot); //슬롯 필터
-}
 
+    @GetMapping("/search")
+    public List<MenuResponse> searchMenus(
+            @RequestParam(name = "keyword") String keyword) {
+
+        if (keyword == null || keyword.isBlank()) {
+            return menuService.getMenus();
+        }
+
+        return menuService.searchMenus(keyword.trim());
+    }
 }
