@@ -4,8 +4,10 @@ import com.human.backend.mealplan.dto.request.MealPlanReconfigureRequest;
 import com.human.backend.mealplan.dto.request.MealPlanSaveRequest;
 import com.human.backend.mealplan.dto.response.MealPlanResponse;
 import com.human.backend.mealplan.service.MealPlanService;
+import com.human.backend.auth.service.UserPrincipal;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,18 +28,23 @@ public class MealPlanController {
     private final MealPlanService mealPlanService;
 
     @PostMapping
-    public ResponseEntity<MealPlanResponse> save(@Valid @RequestBody MealPlanSaveRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(mealPlanService.save(request));
+    public ResponseEntity<MealPlanResponse> save(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody MealPlanSaveRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(mealPlanService.save(request, principal));
     }
 
     @GetMapping("/weekly")
     public MealPlanResponse findWeekly(
+            @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStartDate) {
-        return mealPlanService.findWeeklyPlan(weekStartDate);
+        return mealPlanService.findWeeklyPlan(weekStartDate, principal);
     }
 
     @PostMapping("/reconfigure")
-    public MealPlanResponse reconfigure(@Valid @RequestBody MealPlanReconfigureRequest request) {
-        return mealPlanService.reconfigure(request);
+    public MealPlanResponse reconfigure(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody MealPlanReconfigureRequest request) {
+        return mealPlanService.reconfigure(request, principal);
     }
 }

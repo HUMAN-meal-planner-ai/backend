@@ -3,12 +3,17 @@ package com.human.backend.mealplan.service;
 import com.human.backend.cost.dto.response.MenuCostResponse;
 import com.human.backend.cost.repository.CostRepository;
 import com.human.backend.cost.service.CostService;
+import com.human.backend.auth.entity.AppUser;
+import com.human.backend.auth.repository.AppUserRepository;
+import com.human.backend.auth.service.UserPrincipal;
 import com.human.backend.mealplan.dto.request.MealPlanItemRequest;
 import com.human.backend.mealplan.dto.request.MealPlanReconfigureRequest;
 import com.human.backend.mealplan.dto.request.MealPlanSaveRequest;
 import com.human.backend.mealplan.dto.response.MealPlanResponse;
 import com.human.backend.menu.domain.MenuSlot;
+import com.human.backend.mealplan.repository.MealPlanRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -16,8 +21,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -25,13 +29,20 @@ public class MealPlanService {
 
     private final CostService costService;
     private final CostRepository costRepository;
-    private final Map<LocalDate, MealPlanResponse> savedPlans = new ConcurrentHashMap<>();
+    private final MealPlanRepository mealPlanRepository;
+    private final AppUserRepository appUserRepository;
 
-    public MealPlanResponse save(MealPlanSaveRequest request) {
+    @Transactional
+    public MealPlanResponse save(MealPlanSaveRequest request, UserPrincipal principal) {
+        AppUser user = findUser(principal);
+        if (user.getFacility() == null) {
+            throw new IllegalStateException("식단을 저장하려면 먼저 시설을 등록해야 합니다.");
+        }
+
         int mealCount = request.mealCount() == null ? 1 : request.mealCount();
         List<MealPlanResponse.MealResponse> meals = request.meals().stream()
                 .sorted(Comparator.comparing(MealPlanItemRequest::mealDate))
-                .map(item -> toMealResponse(item, mealCount))
+                .map(item -> saveMeal(user, item, mealCount))
                 .toList();
 
         BigDecimal totalCost = meals.stream()
@@ -39,21 +50,56 @@ public class MealPlanService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .multiply(BigDecimal.valueOf(mealCount));
 
-        MealPlanResponse response = new MealPlanResponse(
-                request.weekStartDate(), mealCount, totalCost, meals);
-        savedPlans.put(request.weekStartDate(), response);
-        return response;
+        return new MealPlanResponse(request.weekStartDate(), mealCount, totalCost, meals);
     }
 
-    public MealPlanResponse findWeeklyPlan(LocalDate weekStartDate) {
-        MealPlanResponse response = savedPlans.get(weekStartDate);
-        if (response == null) {
+    @Transactional(readOnly = true)
+    public MealPlanResponse findWeeklyPlan(LocalDate weekStartDate, UserPrincipal principal) {
+        AppUser user = findUser(principal);
+        if (user.getFacility() == null) {
+            throw new IllegalStateException("주간 식단을 조회하려면 먼저 시설을 등록해야 합니다.");
+        }
+
+        return findWeeklyPlanForFacility(weekStartDate, user.getFacility().getId());
+    }
+
+    /** 자동화 기능처럼 시설 ID를 이미 알고 있는 호출자를 위한 조회입니다. */
+    @Transactional(readOnly = true)
+    public MealPlanResponse findWeeklyPlan(LocalDate weekStartDate, Long facilityId) {
+        if (facilityId == null) {
+            throw new IllegalArgumentException("시설 ID가 필요합니다.");
+        }
+        return findWeeklyPlanForFacility(weekStartDate, facilityId);
+    }
+
+    private MealPlanResponse findWeeklyPlanForFacility(LocalDate weekStartDate, long facilityId) {
+
+        List<MealPlanResponse.MealResponse> meals = mealPlanRepository.findWeeklyPlans(
+                        facilityId, weekStartDate, weekStartDate.plusDays(6))
+                .stream()
+                .map(row -> new MealPlanResponse.MealResponse(
+                        row.mealDate(),
+                        row.mealType(),
+                        MenuSlot.OTHER,
+                        null,
+                        row.menuNames(),
+                        row.costPerPerson()))
+                .toList();
+
+        if (meals.isEmpty()) {
             throw new IllegalArgumentException("저장된 주간 식단이 없습니다. weekStartDate=" + weekStartDate);
         }
-        return response;
+
+        BigDecimal totalCost = meals.stream()
+                .map(MealPlanResponse.MealResponse::costPerPerson)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .multiply(BigDecimal.valueOf(meals.size()));
+
+        return new MealPlanResponse(weekStartDate, meals.size(), totalCost, meals);
     }
 
-    public MealPlanResponse reconfigure(MealPlanReconfigureRequest request) {
+    public MealPlanResponse reconfigure(MealPlanReconfigureRequest request, UserPrincipal principal) {
         int mealCount = request.mealCount() == null ? 1 : request.mealCount();
         List<Long> menuIds = costRepository.findAllMenuIds();
         if (menuIds.isEmpty()) {
@@ -66,12 +112,13 @@ public class MealPlanService {
             Long selectedMenuId = selectMenu(menuIds, previousMenuId, mealCount, request.targetCost());
             items.add(new MealPlanItemRequest(
                     request.weekStartDate().plusDays(day),
+                    "LUNCH",
                     slotOf(selectedMenuId),
                     selectedMenuId));
             previousMenuId = selectedMenuId;
         }
 
-        return save(new MealPlanSaveRequest(request.weekStartDate(), mealCount, items));
+        return save(new MealPlanSaveRequest(request.weekStartDate(), mealCount, items), principal);
     }
 
     private Long selectMenu(List<Long> menuIds, Long previousMenuId, int mealCount, BigDecimal targetCost) {
@@ -83,10 +130,26 @@ public class MealPlanService {
                 .orElse(menuIds.get(0));
     }
 
-    private MealPlanResponse.MealResponse toMealResponse(MealPlanItemRequest item, int mealCount) {
+    private MealPlanResponse.MealResponse saveMeal(AppUser user, MealPlanItemRequest item, int mealCount) {
         MenuCostResponse cost = costService.calculateCurrentMenuCost(item.menuId(), mealCount, null);
+        String mealType = item.mealType() == null || item.mealType().isBlank()
+                ? "LUNCH"
+                : item.mealType().trim().toUpperCase();
+        long planId = mealPlanRepository.insertPlan(
+                user.getFacility().getId(),
+                user.getId(),
+                item.mealDate(),
+                mealType,
+                mealCount);
+        mealPlanRepository.insertPlanItem(planId, item.menuId(), 1);
+
         return new MealPlanResponse.MealResponse(
-                item.mealDate(), item.slot(), item.menuId(), cost.getMenuName(), cost.getCostPerPerson());
+                item.mealDate(), mealType, item.slot(), item.menuId(), cost.getMenuName(), cost.getCostPerPerson());
+    }
+
+    private AppUser findUser(UserPrincipal principal) {
+        return appUserRepository.findById(principal.userId())
+                .orElseThrow(() -> new IllegalStateException("로그인 사용자를 찾을 수 없습니다."));
     }
 
     private MenuSlot slotOf(Long menuId) {

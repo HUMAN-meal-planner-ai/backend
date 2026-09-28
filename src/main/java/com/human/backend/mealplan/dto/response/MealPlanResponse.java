@@ -14,6 +14,7 @@ public record MealPlanResponse(
 ) {
     public record MealResponse(
             LocalDate mealDate,
+            String mealType,
             MenuSlot slot,
             Long menuId,
             String menuName,

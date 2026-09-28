@@ -17,7 +17,7 @@ public class MenuService {
     private final CostRepository costRepository;
     private final MenuRepository menuRepository;
 
-    public MenuService(CostRepository costRepository,MenuRepository menuRepository) {
+    public MenuService(CostRepository costRepository, MenuRepository menuRepository) {
         this.costRepository = costRepository;
         this.menuRepository = menuRepository;
     }
