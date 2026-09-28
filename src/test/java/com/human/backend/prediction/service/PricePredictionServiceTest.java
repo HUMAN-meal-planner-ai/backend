@@ -114,6 +114,42 @@ class PricePredictionServiceTest {
     }
 
     @Test
+    void acceptsSubStorageScaleBasePriceDriftFromJsonRoundTrip() {
+        PricePredictionTarget target = target(3L, "g");
+        List<WeeklyRepresentativePrice> history = weeklyHistory(3L, "g");
+        when(history.get(history.size() - 1).getRepresentativePrice())
+                .thenReturn(new BigDecimal("3.4416666666666667"));
+        AiWeeklyPricePredictionResponse weeklyPrediction = new AiWeeklyPricePredictionResponse(
+                3L,
+                LocalDate.of(2026, 9, 18),
+                LocalDate.of(2026, 9, 25),
+                new BigDecimal("3.441666666666667"),
+                new BigDecimal("3.500000"),
+                new BigDecimal("3.600000"),
+                "g",
+                0.73,
+                0.81,
+                0.77,
+                "weekly_mean_ridge",
+                "weekly_ridge_v1",
+                Instant.parse("2026-09-23T04:00:00Z"));
+        AiPricePredictionResponse storagePrediction = weeklyPrediction.toStorageResponse();
+        when(seriesRepository.findAllActivePredictionTargets()).thenReturn(List.of(target));
+        when(seriesRepository.findWeeklyRepresentativePrices(List.of(3L)))
+                .thenReturn(history);
+        when(client.predictSevenDays(any(AiWeeklyPricePredictionRequest.class)))
+                .thenReturn(new AiWeeklyPricePredictionBatchResponse(
+                        List.of(weeklyPrediction)));
+        when(storage.store(List.of(storagePrediction)))
+                .thenReturn(new PricePredictionStorageService.StoreResult(1, 0));
+
+        PricePredictionCollectionResult result = service.generateSevenDayPredictions();
+
+        assertEquals(1, result.insertedPredictions());
+        verify(storage).store(List.of(storagePrediction));
+    }
+
+    @Test
     void doesNotStoreIncompleteSevenDayResponse() {
         PricePredictionTarget target = target(3L, "g");
         List<WeeklyRepresentativePrice> history = weeklyHistory(3L, "g");
