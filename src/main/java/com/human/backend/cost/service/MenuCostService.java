@@ -101,6 +101,9 @@ public class MenuCostService {
                     }
                 })
                 .filter(java.util.Objects::nonNull)
+                .filter(res -> res.getCostPerPerson() != null
+                        && res.getCostPerPerson().compareTo(BigDecimal.valueOf(100)) >= 0
+                        && res.getCostPerPerson().compareTo(BigDecimal.valueOf(50000)) <= 0)
                 .toList();
     }
 
@@ -166,6 +169,9 @@ public class MenuCostService {
                     }
                 })
                 .filter(java.util.Objects::nonNull)
+                .filter(res -> res.getCostPerPerson() != null
+                        && res.getCostPerPerson().compareTo(BigDecimal.valueOf(100)) >= 0
+                        && res.getCostPerPerson().compareTo(BigDecimal.valueOf(50000)) <= 0)
                 .toList();
     }
 }

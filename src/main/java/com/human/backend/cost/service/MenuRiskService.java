@@ -150,6 +150,12 @@ public class MenuRiskService {
                     }
                 })
                 .filter(java.util.Objects::nonNull)
+                .filter(res -> res.getCurrentCostPerPerson() != null
+                        && res.getCurrentCostPerPerson().compareTo(BigDecimal.valueOf(100)) >= 0
+                        && res.getCurrentCostPerPerson().compareTo(BigDecimal.valueOf(50000)) <= 0
+                        && res.getFutureCostPerPerson() != null
+                        && res.getFutureCostPerPerson().compareTo(BigDecimal.valueOf(100)) >= 0
+                        && res.getFutureCostPerPerson().compareTo(BigDecimal.valueOf(50000)) <= 0)
                 .toList();
     }
 
@@ -267,6 +273,12 @@ public class MenuRiskService {
                     }
                 })
                 .filter(java.util.Objects::nonNull)
+                .filter(res -> res.getCurrentCostPerPerson() != null
+                        && res.getCurrentCostPerPerson().compareTo(BigDecimal.valueOf(100)) >= 0
+                        && res.getCurrentCostPerPerson().compareTo(BigDecimal.valueOf(50000)) <= 0
+                        && res.getFutureCostPerPerson() != null
+                        && res.getFutureCostPerPerson().compareTo(BigDecimal.valueOf(100)) >= 0
+                        && res.getFutureCostPerPerson().compareTo(BigDecimal.valueOf(50000)) <= 0)
                 .toList();
     }
 
@@ -417,6 +429,12 @@ public class MenuRiskService {
                     }
                 })
                 .filter(java.util.Objects::nonNull)
+                .filter(res -> res.getCurrentCostPerPerson() != null
+                        && res.getCurrentCostPerPerson().compareTo(BigDecimal.valueOf(100)) >= 0
+                        && res.getCurrentCostPerPerson().compareTo(BigDecimal.valueOf(50000)) <= 0
+                        && res.getFutureCostPerPerson() != null
+                        && res.getFutureCostPerPerson().compareTo(BigDecimal.valueOf(100)) >= 0
+                        && res.getFutureCostPerPerson().compareTo(BigDecimal.valueOf(50000)) <= 0)
                 .toList();
     }
 }
