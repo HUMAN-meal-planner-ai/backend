@@ -87,10 +87,24 @@ public class MenuCandidateDetectionService {
 
         // 3. 각 메뉴별 다차원 지표 진단 및 후보 필터링 (DTO 팩토리를 활용한 높은 응집도)
         for (Long menuId : targetMenuIdSet) {
+            // (1) 원가 변동 비교 및 위험도/식재료 진단
+            MenuCostComparisonResponse comparison;
+            try {
+                comparison = menuRiskService.compareMenuCost(menuId, targetDate, mealCount);
+            } catch (Exception e) {
+                log.warn(">> [AUTO-006] 메뉴 ID={} 비교 분석 생략: {}", menuId, e.getMessage());
+                continue;
+            }
+
+            // 가격 테이블에 데이터가 없는 결측치 메뉴(0원)는 평가 및 출력에서 제외
+            if (comparison == null
+                    || comparison.getCurrentCostPerPerson() == null || comparison.getCurrentCostPerPerson().compareTo(BigDecimal.ZERO) <= 0
+                    || comparison.getFutureCostPerPerson() == null || comparison.getFutureCostPerPerson().compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+
             totalEvaluated++;
 
-            // (1) 원가 변동 비교 및 위험도/식재료 진단
-            MenuCostComparisonResponse comparison = menuRiskService.compareMenuCost(menuId, targetDate, mealCount);
             MenuRiskResponse riskResponse = menuRiskService.evaluateMenuRisk(menuId, targetDate);
             CostDriverResponse driverResponse = menuRiskService.identifyCostDrivers(menuId, targetDate);
 
