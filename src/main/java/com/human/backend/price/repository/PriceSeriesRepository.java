@@ -2,6 +2,7 @@ package com.human.backend.price.repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -26,6 +27,49 @@ public interface PriceSeriesRepository extends JpaRepository<PriceSeries, Long> 
         BigDecimal getRepresentativePrice();
         String getStandardUnit();
     }
+
+    /**
+     * 데이터 출처별 시계열·가격 건수를 한 번의 집계 쿼리로 조회합니다.
+     * 인터페이스 기반 투영을 사용해 관리자 화면에 필요하지 않은 엔티티 전체를 읽지 않습니다.
+     */
+    interface AdminPriceSourceSummary {
+        String getSourceName();
+        Long getSeriesCount();
+        Long getPriceCount();
+        LocalDate getLatestPriceDate();
+        Instant getLatestCollectedAt();
+    }
+
+    @Query("""
+            SELECT ps.sourceName AS sourceName,
+                   COUNT(DISTINCT ps.id) AS seriesCount,
+                   COUNT(price.id) AS priceCount,
+                   MAX(price.priceDate) AS latestPriceDate,
+                   MAX(price.collectedAt) AS latestCollectedAt
+            FROM PriceSeries ps
+            LEFT JOIN IngredientPrice price ON price.series = ps
+            GROUP BY ps.sourceName
+            ORDER BY ps.sourceName
+            """)
+    // LEFT JOIN을 사용하므로 가격 행이 0건인 출처도 등록된 시계열 수와 함께 결과에 남습니다.
+    List<AdminPriceSourceSummary> findAdminPriceSourceSummaries();
+
+    /**
+     * 현재 자동 수집 조건을 모두 충족하는 KAMIS 시계열 수를 표시합니다.
+     * 실제 수집 메서드와 같은 필수 코드 조건을 사용해야 화면의 대상 수와 실행 대상이 일치합니다.
+     */
+    @Query("""
+            SELECT COUNT(ps.id)
+            FROM PriceSeries ps
+            JOIN ps.ingredient ingredient
+            WHERE ps.sourceName = 'KAMIS'
+              AND ingredient.active = true
+              AND ps.sourceCategoryCode IS NOT NULL
+              AND ps.sourceItemCode IS NOT NULL
+              AND ps.sourceKindCode IS NOT NULL
+              AND ps.sourceRankCode IS NOT NULL
+            """)
+    long countActiveKamisCollectionTargets();
 
     @Query("""
             SELECT ps
