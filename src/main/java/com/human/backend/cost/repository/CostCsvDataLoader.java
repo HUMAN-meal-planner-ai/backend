@@ -327,7 +327,17 @@ public class CostCsvDataLoader {
             while ((line = br.readLine()) != null) {
                 if (line.trim().isEmpty()) continue;
                 String[] tokens = parseCsvLine(line);
-                if (tokens.length >= 3) {
+                if (tokens.length >= 4) {
+                    Long planId = parseLongSafe(tokens[1]);
+                    // slot_type(RICE, SOUP, MAIN, SIDE) 컬럼이 추가된 경우 tokens[3]이 menu_id
+                    Long menuId = parseLongSafe(tokens[3]);
+                    if (menuId == null) {
+                        menuId = parseLongSafe(tokens[2]);
+                    }
+                    if (planId != null && menuId != null) {
+                        result.computeIfAbsent(planId, k -> new ArrayList<>()).add(menuId);
+                    }
+                } else if (tokens.length >= 3) {
                     Long planId = parseLongSafe(tokens[1]);
                     Long menuId = parseLongSafe(tokens[2]);
                     if (planId != null && menuId != null) {
