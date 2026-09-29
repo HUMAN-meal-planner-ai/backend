@@ -141,6 +141,8 @@ public class MemoryCostRepository implements CostRepository {
                 SELECT mi.menu_id,
                        mi.ingredient_id,
                        i.name AS ingredient_name,
+                       i.category AS ingredient_category,
+                       mi.is_primary,
                        mi.quantity,
                        COALESCE(ip.standard_unit_price, 0) AS standard_unit_price,
                        COALESCE(ip.price_date, CURRENT_DATE) AS price_date
@@ -162,6 +164,8 @@ public class MemoryCostRepository implements CostRepository {
                 Long menuId = rs.getLong("menu_id");
                 Long ingredientId = rs.getLong("ingredient_id");
                 String ingredientName = rs.getString("ingredient_name");
+                String ingredientCategory = rs.getString("ingredient_category");
+                Boolean isPrimary = rs.getBoolean("is_primary");
                 BigDecimal quantity = rs.getBigDecimal("quantity");
                 BigDecimal unitPrice = rs.getBigDecimal("standard_unit_price");
                 Date pDate = rs.getDate("price_date");
@@ -179,6 +183,8 @@ public class MemoryCostRepository implements CostRepository {
                 MenuIngredientCostVo vo = new MenuIngredientCostVo(
                         ingredientId,
                         ingredientName,
+                        ingredientCategory,
+                        isPrimary,
                         quantity,
                         unitPrice != null ? unitPrice : BigDecimal.ZERO,
                         priceDate
