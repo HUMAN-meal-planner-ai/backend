@@ -71,6 +71,8 @@ public class MenuCostResponse {
     public static class IngredientDetail {
         private final Long ingredientId;
         private final String ingredientName;
+        private final String ingredientCategory;
+        private final Boolean isPrimary;
         private final BigDecimal quantity;          // 사용량 (g)
         private final BigDecimal standardUnitPrice; // 1g당 단가
         private final BigDecimal lineCost;          // quantity * standardUnitPrice
@@ -84,6 +86,8 @@ public class MenuCostResponse {
             return IngredientDetail.builder()
                     .ingredientId(vo.getIngredientId())
                     .ingredientName(vo.getIngredientName())
+                    .ingredientCategory(vo.getIngredientCategory())
+                    .isPrimary(vo.getIsPrimary())
                     .quantity(vo.getQuantity())
                     .standardUnitPrice(vo.getStandardUnitPrice())
                     .lineCost(vo.calculateLineCost())

@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.List;
-
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -28,6 +28,36 @@ public class MealPlanRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    public void deleteWeeklyPlans(long facilityId, LocalDate startDate, LocalDate endDate) {
+        // meal_plan_item 삭제 후 meal_plan 삭제
+        jdbcTemplate.update("""
+                DELETE FROM mealfit.meal_plan_item
+                WHERE plan_id IN (
+                    SELECT plan_id FROM mealfit.meal_plan
+                    WHERE facility_id = ? AND plan_date BETWEEN ? AND ?
+                )
+                """, facilityId, startDate, endDate);
+
+        jdbcTemplate.update("""
+                DELETE FROM mealfit.meal_plan
+                WHERE facility_id = ? AND plan_date BETWEEN ? AND ?
+                """, facilityId, startDate, endDate);
+    }
+
+    /**
+     * 특정 식단(planId)에 포함된 특정 메뉴(menuId) 하나를 삭제합니다.
+     */
+    public void deletePlanItem(long planId, long menuId) {
+        jdbcTemplate.update(
+                """
+                DELETE FROM mealfit.meal_plan_item
+                WHERE plan_id = ? AND menu_id = ?
+                """,
+                planId,
+                menuId
+        );
+    }
+
     /** 식단 기본 정보를 저장하고 새로 만들어진 plan_id를 반환합니다. */
     public long insertPlan(
             long facilityId,
@@ -38,17 +68,17 @@ public class MealPlanRepository {
         String sql = """
                 INSERT INTO mealfit.meal_plan (
                     facility_id,
-                        user_id,
+                    user_id,
                     plan_date,
                     meal_type,
                     meal_count,
-                        version
+                    version
                     ) VALUES (?, ?, ?, ?, ?, 1)
                 """;
 
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
-            var statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            var statement = connection.prepareStatement(sql, new String[]{"plan_id"});
             statement.setLong(1, facilityId);
             statement.setLong(2, userId);
             statement.setObject(3, mealDate);
@@ -57,21 +87,30 @@ public class MealPlanRepository {
             return statement;
         }, keyHolder);
 
-        Number generatedId = keyHolder.getKey();
-        if (generatedId == null) {
+        Map<String, Object> keys = keyHolder.getKeys();
+        if (keys == null || !keys.containsKey("plan_id")) {
             throw new IllegalStateException("식단 저장 후 plan_id를 받지 못했습니다.");
         }
-        return generatedId.longValue();
+        return ((Number) keys.get("plan_id")).longValue();
     }
 
     /** 저장된 식단에 메뉴 하나를 연결합니다. */
     public void insertPlanItem(long planId, long menuId, int displayOrder) {
+        // slot_type은 display_order 기준으로 자동 배정합니다.
+        // 1=RICE(밥), 2=SOUP(국), 3=MAIN(메인반찬), 그 외=SIDE
+        String slotType = switch (displayOrder) {
+            case 1 -> "RICE";
+            case 2 -> "SOUP";
+            case 3 -> "MAIN";
+            default -> "SIDE";
+        };
         jdbcTemplate.update(
                 """
-                INSERT INTO mealfit.meal_plan_item (plan_id, menu_id, display_order)
-                VALUES (?, ?, ?)
+                INSERT INTO mealfit.meal_plan_item (plan_id, slot_type, menu_id, display_order)
+                VALUES (?, ?, ?, ?)
                 """,
                 planId,
+                slotType,
                 menuId,
                 displayOrder);
     }
@@ -92,7 +131,8 @@ public class MealPlanRepository {
                     mp.plan_date,
                     mp.meal_type,
                     mp.meal_count,
-                    STRING_AGG(m.name, ', ' ORDER BY mpi.display_order) AS menu_names
+                    STRING_AGG(m.name, ', ' ORDER BY mpi.display_order) AS menu_names,
+                    STRING_AGG(COALESCE(CAST(m.menu_id AS VARCHAR), ''), ',' ORDER BY mpi.display_order) AS menu_ids
                 FROM mealfit.meal_plan mp
                                 LEFT JOIN mealfit.meal_plan_item mpi
                   ON mpi.plan_id = mp.plan_id
@@ -113,7 +153,8 @@ public class MealPlanRepository {
                         resultSet.getString("meal_type"),
                         resultSet.getInt("meal_count"),
                         BigDecimal.ZERO,
-                        resultSet.getString("menu_names")),
+                        resultSet.getString("menu_names"),
+                        resultSet.getString("menu_ids")),
                 facilityId,
                 weekStartDate,
                 weekEndDate);
@@ -126,6 +167,7 @@ public class MealPlanRepository {
             String mealType,
             int mealCount,
             BigDecimal costPerPerson,
-            String menuNames) {
+            String menuNames,
+            String menuIds) {
     }
 }

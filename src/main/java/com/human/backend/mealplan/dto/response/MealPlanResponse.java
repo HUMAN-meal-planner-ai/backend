@@ -13,12 +13,40 @@ public record MealPlanResponse(
         List<MealResponse> meals
 ) {
     public record MealResponse(
-            LocalDate mealDate,
-            String mealType,
-            MenuSlot slot,
+                Long planId,
+                LocalDate mealDate,
+                String mealType,
+                MenuSlot slot,
+                Long menuId,
+                String menuName,
+                BigDecimal costPerPerson,
+                List<MealMenuItemResponse> menuItems
+    ) {
+        public MealResponse(
+                Long planId,
+                LocalDate mealDate,
+                String mealType,
+                MenuSlot slot,
+                Long menuId,
+                String menuName,
+                BigDecimal costPerPerson
+        ) {
+            this(
+                        planId,
+                        mealDate,
+                        mealType,
+                        slot,
+                        menuId,
+                        menuName,
+                        costPerPerson,
+                        menuId != null ? List.of(new MealMenuItemResponse(menuId, menuName)) : List.of()
+            );
+        }
+    }
+
+    public record MealMenuItemResponse(
             Long menuId,
-            String menuName,
-            BigDecimal costPerPerson
+            String menuName
     ) {
     }
 }
