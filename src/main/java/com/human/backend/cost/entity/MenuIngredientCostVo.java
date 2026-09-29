@@ -17,6 +17,9 @@ public class MenuIngredientCostVo {
     private final BigDecimal quantity;      // ERD: menu_ingredient.quantity (1인 사용 중량, g)
     private final BigDecimal standardUnitPrice; // ERD: ingredient_price.standard_unit_price (최신 단가)
     private final LocalDate priceDate;      // 가격 수집 기준일
+    private final String priceSource;
+    private final String mappingType;
+    private final BigDecimal confidenceScore;
 
     // 생성자 (불변 객체로 생성)
     public MenuIngredientCostVo(Long ingredientId, String ingredientName, String ingredientCategory, Boolean isPrimary, BigDecimal quantity, BigDecimal standardUnitPrice, LocalDate priceDate) {
@@ -27,6 +30,9 @@ public class MenuIngredientCostVo {
         this.quantity = quantity != null ? quantity : BigDecimal.ZERO;
         this.standardUnitPrice = standardUnitPrice != null ? standardUnitPrice : BigDecimal.ZERO;
         this.priceDate = priceDate;
+        this.priceSource = priceSource;
+        this.mappingType = mappingType;
+        this.confidenceScore = confidenceScore;
     }
 
     public MenuIngredientCostVo(Long ingredientId, String ingredientName, BigDecimal quantity, BigDecimal standardUnitPrice, LocalDate priceDate) {

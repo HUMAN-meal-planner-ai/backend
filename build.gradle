@@ -41,7 +41,10 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
 
     // DevTools
-    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+    // 네트워크가 제한된 테스트 환경에서도 -PskipDevtools로 서버를 실행할 수 있습니다.
+    if (!project.hasProperty('skipDevtools')) {
+        developmentOnly 'org.springframework.boot:spring-boot-devtools'
+    }
 
     // Swagger
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.13'

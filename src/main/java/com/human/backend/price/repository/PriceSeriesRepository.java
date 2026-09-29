@@ -152,8 +152,7 @@ public interface PriceSeriesRepository extends JpaRepository<PriceSeries, Long> 
                     AVG(ip.standard_unit_price) AS representative_price
                 FROM canonical_series canonical
                 JOIN mealfit.price_series regional
-                  ON regional.ingredient_id = canonical.ingredient_id
-                 AND regional.source_name = canonical.source_name
+                  ON regional.source_name = canonical.source_name
                  AND regional.source_category_code IS NOT DISTINCT FROM canonical.source_category_code
                  AND regional.source_item_code IS NOT DISTINCT FROM canonical.source_item_code
                  AND regional.source_kind_code IS NOT DISTINCT FROM canonical.source_kind_code
@@ -232,8 +231,7 @@ public interface PriceSeriesRepository extends JpaRepository<PriceSeries, Long> 
                 canonical.standard_unit AS "standardUnit"
             FROM canonical_series canonical
             JOIN mealfit.price_series regional
-              ON regional.ingredient_id = canonical.ingredient_id
-             AND regional.source_name = canonical.source_name
+              ON regional.source_name = canonical.source_name
              AND regional.source_category_code IS NOT DISTINCT FROM canonical.source_category_code
              AND regional.source_item_code IS NOT DISTINCT FROM canonical.source_item_code
              AND regional.source_kind_code IS NOT DISTINCT FROM canonical.source_kind_code

@@ -77,6 +77,10 @@ public class MenuCostResponse {
         private final BigDecimal standardUnitPrice; // 1g당 단가
         private final BigDecimal lineCost;          // quantity * standardUnitPrice
         private final LocalDate priceDate;          // 단가 기준일
+        private final String priceSource;
+        private final String mappingType;
+        private final BigDecimal confidenceScore;
+        private final boolean estimated;
 
         /**
          * MenuIngredientCostVo 엔티티로부터 DTO를 변환하는 정적 팩토리 메서드
@@ -92,6 +96,10 @@ public class MenuCostResponse {
                     .standardUnitPrice(vo.getStandardUnitPrice())
                     .lineCost(vo.calculateLineCost())
                     .priceDate(vo.getPriceDate())
+                    .priceSource(vo.getPriceSource())
+                    .mappingType(vo.getMappingType())
+                    .confidenceScore(vo.getConfidenceScore())
+                    .estimated(vo.getMappingType() != null && !"EXACT".equals(vo.getMappingType()))
                     .build();
         }
     }

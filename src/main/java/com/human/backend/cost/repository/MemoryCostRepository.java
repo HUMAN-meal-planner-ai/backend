@@ -190,6 +190,9 @@ public class MemoryCostRepository implements CostRepository {
                 String origUnit = rs.getString("original_unit");
                 Date pDate = rs.getDate("price_date");
                 LocalDate priceDate = (pDate != null) ? pDate.toLocalDate() : LocalDate.now();
+                String priceSource = rs.getString("source_name");
+                String mappingType = rs.getString("mapping_type");
+                BigDecimal confidenceScore = rs.getBigDecimal("confidence_score");
 
                 // DB 단가가 0원이면 CSV 캐시로 Fallback
                 if (unitPrice == null || unitPrice.compareTo(BigDecimal.ZERO) == 0) {
@@ -210,7 +213,10 @@ public class MemoryCostRepository implements CostRepository {
                         isPrimary,
                         quantity,
                         unitPrice != null ? unitPrice : BigDecimal.ZERO,
-                        priceDate
+                        priceDate,
+                        priceSource,
+                        mappingType,
+                        confidenceScore
                 );
 
                 // 데이터 현실화 및 정제 파이프라인 통과
