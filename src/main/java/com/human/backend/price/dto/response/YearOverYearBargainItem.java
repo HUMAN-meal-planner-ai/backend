@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 
 public record YearOverYearBargainItem(
         Long seriesId,
+        Long ingredientId,
         String ingredientName,
         String category,
         String variety,

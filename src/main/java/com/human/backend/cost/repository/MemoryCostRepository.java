@@ -147,6 +147,67 @@ public class MemoryCostRepository implements CostRepository {
 
             // 2. 최신 식재료 단가 전체 일괄 로드 (단 1회의 쿼리로 전체 메뉴 매핑)
             String latestSql = """
+                WITH latest_price_per_series AS MATERIALIZED (
+                    SELECT DISTINCT ON (ip2.series_id)
+                           ip2.series_id,
+                           ip2.standard_unit_price,
+                           ip2.original_price,
+                           ip2.unit_quantity,
+                           ip2.price_date
+                    FROM mealfit.ingredient_price ip2
+                    ORDER BY ip2.series_id, ip2.price_date DESC, ip2.price_id DESC
+                ),
+                price_candidates AS (
+                    -- 관리자가 승인한 매핑: 메뉴 식재료와 실제 KAMIS 가격 시계열을 연결합니다.
+                    SELECT ipm.ingredient_id,
+                           latest.standard_unit_price * ipm.conversion_factor AS standard_unit_price,
+                           latest.original_price,
+                           latest.unit_quantity,
+                           ps.original_unit,
+                           latest.price_date,
+                           ps.source_name,
+                           ipm.mapping_type,
+                           ipm.confidence_score,
+                           ipm.priority,
+                           ps.is_cost_basis,
+                           ps.price_type,
+                           TRUE AS mapped
+                    FROM mealfit.ingredient_price_mapping ipm
+                    JOIN mealfit.price_series ps ON ps.series_id = ipm.series_id
+                    JOIN latest_price_per_series latest ON latest.series_id = ps.series_id
+                    WHERE ipm.is_active IS TRUE
+                      AND ipm.review_status = 'APPROVED'
+
+                    UNION ALL
+
+                    -- 매핑 테이블 도입 전부터 존재하던 직접 연결도 호환 경로로 유지합니다.
+                    SELECT ps.ingredient_id,
+                           latest.standard_unit_price,
+                           latest.original_price,
+                           latest.unit_quantity,
+                           ps.original_unit,
+                           latest.price_date,
+                           ps.source_name,
+                           'EXACT' AS mapping_type,
+                           1::numeric AS confidence_score,
+                           2147483647 AS priority,
+                           ps.is_cost_basis,
+                           ps.price_type,
+                           FALSE AS mapped
+                    FROM mealfit.price_series ps
+                    JOIN latest_price_per_series latest ON latest.series_id = ps.series_id
+                ),
+                best_price_per_ingredient AS (
+                    SELECT DISTINCT ON (candidate.ingredient_id)
+                           candidate.*
+                    FROM price_candidates candidate
+                    ORDER BY candidate.ingredient_id,
+                             candidate.mapped DESC,
+                             candidate.priority ASC,
+                             candidate.is_cost_basis DESC,
+                             (candidate.price_type = 'WHOLESALE') DESC,
+                             candidate.price_date DESC
+                )
                 SELECT mi.menu_id,
                        mi.ingredient_id,
                        i.name AS ingredient_name,
@@ -157,23 +218,14 @@ public class MemoryCostRepository implements CostRepository {
                        COALESCE(ip.original_price, 0) AS original_price,
                        COALESCE(ip.unit_quantity, 1) AS unit_quantity,
                        ip.original_unit,
-                       COALESCE(ip.price_date, CURRENT_DATE) AS price_date
+                       COALESCE(ip.price_date, CURRENT_DATE) AS price_date,
+                       ip.source_name,
+                       ip.mapping_type,
+                       ip.confidence_score
                 FROM mealfit.menu_ingredient mi
                 JOIN mealfit.ingredient i ON mi.ingredient_id = i.ingredient_id
-                LEFT JOIN LATERAL (
-                    SELECT ip2.standard_unit_price,
-                           ip2.original_price,
-                           ps.unit_quantity,
-                           ps.original_unit,
-                           ip2.price_date
-                    FROM mealfit.price_series ps
-                    JOIN mealfit.ingredient_price ip2 ON ip2.series_id = ps.series_id
-                    WHERE ps.ingredient_id = i.ingredient_id
-                    ORDER BY (ps.is_cost_basis IS TRUE) DESC,
-                             (ps.price_type = 'WHOLESALE') DESC,
-                             ip2.price_date DESC
-                    LIMIT 1
-                ) ip ON true
+                LEFT JOIN best_price_per_ingredient ip
+                  ON ip.ingredient_id = i.ingredient_id
                 ORDER BY mi.menu_id, mi.ingredient_id
                 """;
 
@@ -201,9 +253,6 @@ public class MemoryCostRepository implements CostRepository {
                         unitPrice = csvPrice.getStandardUnitPrice();
                         priceDate = csvPrice.getPriceDate();
                     }
-                } else {
-                    // 단위 정규화 (kg 단위 수치로 인해 kg당 가격으로 들어간 경우 g당 가격으로 /1000 보정)
-                    unitPrice = normalizeUnitPrice(unitPrice, origUnitQty, origUnit);
                 }
 
                 MenuIngredientCostVo rawVo = new MenuIngredientCostVo(
@@ -537,9 +586,14 @@ public class MemoryCostRepository implements CostRepository {
         return new MenuIngredientCostVo(
                 item.getIngredientId(),
                 item.getIngredientName(),
+                item.getIngredientCategory(),
+                item.getIsPrimary(),
                 qty,
                 unitPrice,
-                item.getPriceDate()
+                item.getPriceDate(),
+                item.getPriceSource(),
+                item.getMappingType(),
+                item.getConfidenceScore()
         );
     }
 
@@ -593,29 +647,6 @@ public class MemoryCostRepository implements CostRepository {
     private boolean isSoupMenu(String name, String category) {
         String full = (name + " " + category).toLowerCase();
         return full.contains("국") || full.contains("찌개") || full.contains("탕") || full.contains("스프") || full.contains("전골");
-    }
-
-    /**
-     * 식재료 단가 단위 정규화:
-     * 레시피 사용량(g 단위)과 곱해질 수 있도록 '원/g' 또는 '원/ea' 기준으로 단가를 정규화합니다.
-     * 예: original_unit이 kg(1kg, 20kg 등)인데 unit_quantity가 kg 수치(1, 20 등)로 되어 있어
-     *     단가가 kg당 가격(1000원 이상)으로 산출된 경우 -> 1000으로 나누어 g당 가격으로 변환
-     */
-    private BigDecimal normalizeUnitPrice(BigDecimal rawUnitPrice, BigDecimal unitQuantity, String originalUnit) {
-        if (rawUnitPrice == null || rawUnitPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
-        }
-
-        if (originalUnit != null && originalUnit.toLowerCase().contains("kg")) {
-            // unit_quantity가 100 미만(즉 1kg, 10kg, 20kg 등의 수치)이면서 단가가 50원 이상인 경우
-            // (보통 1g당 단가는 1원~30원 수준이나 kg당 단가는 수천~수만 원)
-            if ((unitQuantity != null && unitQuantity.compareTo(BigDecimal.valueOf(100)) < 0)
-                    || rawUnitPrice.compareTo(BigDecimal.valueOf(100)) >= 0) {
-                return rawUnitPrice.divide(BigDecimal.valueOf(1000), 4, RoundingMode.HALF_UP);
-            }
-        }
-
-        return rawUnitPrice;
     }
 
     public synchronized void loadDataFromCsv() {
@@ -758,9 +789,14 @@ public class MemoryCostRepository implements CostRepository {
             predictedList.add(new MenuIngredientCostVo(
                     ingredientId,
                     item.getIngredientName(),
+                    item.getIngredientCategory(),
+                    item.getIsPrimary(),
                     item.getQuantity(),
                     finalUnitPrice,
-                    finalPriceDate
+                    finalPriceDate,
+                    item.getPriceSource(),
+                    item.getMappingType(),
+                    item.getConfidenceScore()
             ));
         }
 
