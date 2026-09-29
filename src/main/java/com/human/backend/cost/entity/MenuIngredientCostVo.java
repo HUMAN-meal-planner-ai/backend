@@ -12,17 +12,25 @@ import java.time.LocalDate;
 public class MenuIngredientCostVo { 
     private final Long ingredientId;        // 기본키
     private final String ingredientName;    // 재료이름(식재료명 테이블에서 가져온다.)
+    private final String ingredientCategory;// 식재료 카테고리
+    private final Boolean isPrimary;        // 주재료 여부
     private final BigDecimal quantity;      // ERD: menu_ingredient.quantity (1인 사용 중량, g)
     private final BigDecimal standardUnitPrice; // ERD: ingredient_price.standard_unit_price (최신 단가)
     private final LocalDate priceDate;      // 가격 수집 기준일
 
     // 생성자 (불변 객체로 생성)
-    public MenuIngredientCostVo(Long ingredientId, String ingredientName, BigDecimal quantity, BigDecimal standardUnitPrice, LocalDate priceDate) {
+    public MenuIngredientCostVo(Long ingredientId, String ingredientName, String ingredientCategory, Boolean isPrimary, BigDecimal quantity, BigDecimal standardUnitPrice, LocalDate priceDate) {
         this.ingredientId = ingredientId;
         this.ingredientName = ingredientName;
+        this.ingredientCategory = ingredientCategory;
+        this.isPrimary = isPrimary != null ? isPrimary : false;
         this.quantity = quantity != null ? quantity : BigDecimal.ZERO;
         this.standardUnitPrice = standardUnitPrice != null ? standardUnitPrice : BigDecimal.ZERO;
         this.priceDate = priceDate;
+    }
+
+    public MenuIngredientCostVo(Long ingredientId, String ingredientName, BigDecimal quantity, BigDecimal standardUnitPrice, LocalDate priceDate) {
+        this(ingredientId, ingredientName, null, false, quantity, standardUnitPrice, priceDate);
     }
 
     /**

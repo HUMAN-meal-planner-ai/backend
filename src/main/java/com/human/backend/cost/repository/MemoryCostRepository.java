@@ -181,6 +181,8 @@ public class MemoryCostRepository implements CostRepository {
                 Long menuId = rs.getLong("menu_id");
                 Long ingredientId = rs.getLong("ingredient_id");
                 String ingredientName = rs.getString("ingredient_name");
+                String ingredientCategory = rs.getString("ingredient_category");
+                Boolean isPrimary = rs.getBoolean("is_primary");
                 BigDecimal quantity = rs.getBigDecimal("quantity");
                 BigDecimal unitPrice = rs.getBigDecimal("standard_unit_price");
                 BigDecimal origUnitQty = rs.getBigDecimal("unit_quantity");
@@ -203,6 +205,8 @@ public class MemoryCostRepository implements CostRepository {
                 MenuIngredientCostVo rawVo = new MenuIngredientCostVo(
                         ingredientId,
                         ingredientName,
+                        ingredientCategory,
+                        isPrimary,
                         quantity,
                         unitPrice != null ? unitPrice : BigDecimal.ZERO,
                         priceDate

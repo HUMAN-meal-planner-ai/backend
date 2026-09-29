@@ -56,8 +56,9 @@ public class GlobalExceptionHandler {
         log.error("Unhandled API exception", exception);
         persist(exception, HttpStatus.INTERNAL_SERVER_ERROR.value(), "INTERNAL_ERROR", request);
         // stackTrace나 DB 오류 문구는 공격자에게 내부 구조를 알려줄 수 있으므로 클라이언트에 노출하지 않습니다.
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
-            "서버에서 요청을 처리하지 못했습니다.", Map.of());
+        // TODO: 디버깅용 - 운영 환경에서는 반드시 제거할 것
+        String debugMsg = exception.getClass().getSimpleName() + ": " + exception.getMessage();
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", debugMsg, Map.of());
     }
 
     private void persist(Exception exception, int httpStatus, String errorCode, HttpServletRequest request) {
