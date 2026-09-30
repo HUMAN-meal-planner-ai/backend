@@ -22,13 +22,15 @@ import com.human.backend.price.dto.response.PriceDataStatus;
 import com.human.backend.price.dto.response.WeeklyPriceResponse;
 import com.human.backend.price.service.PriceQueryService;
 import com.human.backend.price.service.PriceService;
+import com.human.backend.price.service.YearOverYearBargainService;
 
 class PriceControllerTest {
 
     private final PriceService priceService = mock(PriceService.class);
     private final PriceQueryService queryService = mock(PriceQueryService.class);
+    private final YearOverYearBargainService bargainService = mock(YearOverYearBargainService.class);
     private final MockMvc mockMvc = MockMvcBuilders
-            .standaloneSetup(new PriceController(priceService, queryService))
+            .standaloneSetup(new PriceController(priceService, queryService, bargainService))
             .build();
 
     @Test

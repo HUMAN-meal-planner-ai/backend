@@ -5,8 +5,10 @@ import java.time.LocalDate;
 import com.human.backend.price.dto.response.PriceCollectionResult;
 import com.human.backend.price.dto.response.DailyPriceResponse;
 import com.human.backend.price.dto.response.WeeklyPriceResponse;
+import com.human.backend.price.dto.response.YearOverYearBargainResponse;
 import com.human.backend.price.service.PriceQueryService;
 import com.human.backend.price.service.PriceService;
+import com.human.backend.price.service.YearOverYearBargainService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,10 +25,23 @@ public class PriceController {
 
     private final PriceService priceService;
     private final PriceQueryService priceQueryService;
+    private final YearOverYearBargainService yearOverYearBargainService;
 
-    public PriceController(PriceService priceService, PriceQueryService priceQueryService) {
+    public PriceController(PriceService priceService, PriceQueryService priceQueryService,
+            YearOverYearBargainService yearOverYearBargainService) {
         this.priceService = priceService;
         this.priceQueryService = priceQueryService;
+        this.yearOverYearBargainService = yearOverYearBargainService;
+    }
+
+    @GetMapping("/year-over-year-bargains")
+    public YearOverYearBargainResponse getYearOverYearBargains(
+            @RequestParam(defaultValue = "4") int limit) {
+        try {
+            return yearOverYearBargainService.getBargains(limit);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
     }
 
     @GetMapping("/{seriesId}/daily")

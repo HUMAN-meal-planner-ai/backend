@@ -17,9 +17,18 @@ public class MenuIngredientCostVo {
     private final BigDecimal quantity;      // ERD: menu_ingredient.quantity (1인 사용 중량, g)
     private final BigDecimal standardUnitPrice; // ERD: ingredient_price.standard_unit_price (최신 단가)
     private final LocalDate priceDate;      // 가격 수집 기준일
+    private final String priceSource;       // 가격 출처(KAMIS, CSV 등)
+    private final String mappingType;       // 직접/대체 매핑 유형(EXACT, VARIETY, RAW_PROXY, CATEGORY_PROXY)
+    private final BigDecimal confidenceScore; // 대체 가격의 신뢰도(0~1)
 
-    // 생성자 (불변 객체로 생성)
-    public MenuIngredientCostVo(Long ingredientId, String ingredientName, String ingredientCategory, Boolean isPrimary, BigDecimal quantity, BigDecimal standardUnitPrice, LocalDate priceDate) {
+    /**
+     * DB 가격 매핑 정보까지 포함해 메뉴 원가 항목을 생성합니다.
+     * 매핑 부가 정보는 화면에서 대체 가격 사용 여부를 구분할 때 사용합니다.
+     */
+    public MenuIngredientCostVo(Long ingredientId, String ingredientName, String ingredientCategory,
+                                Boolean isPrimary, BigDecimal quantity, BigDecimal standardUnitPrice,
+                                LocalDate priceDate, String priceSource, String mappingType,
+                                BigDecimal confidenceScore) {
         this.ingredientId = ingredientId;
         this.ingredientName = ingredientName;
         this.ingredientCategory = ingredientCategory;
@@ -27,6 +36,20 @@ public class MenuIngredientCostVo {
         this.quantity = quantity != null ? quantity : BigDecimal.ZERO;
         this.standardUnitPrice = standardUnitPrice != null ? standardUnitPrice : BigDecimal.ZERO;
         this.priceDate = priceDate;
+        this.priceSource = priceSource;
+        this.mappingType = mappingType;
+        this.confidenceScore = confidenceScore;
+    }
+
+    /**
+     * 기존 CSV 데이터와 테스트 코드가 사용하는 호환 생성자입니다.
+     * 가격 매핑 정보가 없는 데이터는 부가 필드를 null로 보관합니다.
+     */
+    public MenuIngredientCostVo(Long ingredientId, String ingredientName, String ingredientCategory,
+                                Boolean isPrimary, BigDecimal quantity, BigDecimal standardUnitPrice,
+                                LocalDate priceDate) {
+        this(ingredientId, ingredientName, ingredientCategory, isPrimary, quantity,
+                standardUnitPrice, priceDate, null, null, null);
     }
 
     public MenuIngredientCostVo(Long ingredientId, String ingredientName, BigDecimal quantity, BigDecimal standardUnitPrice, LocalDate priceDate) {

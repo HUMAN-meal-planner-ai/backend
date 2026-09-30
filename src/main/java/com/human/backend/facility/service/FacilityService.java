@@ -33,10 +33,12 @@ public class FacilityService {
     @Transactional
     public FacilityResponse createForUser(Long userId, FacilityRequest request) {
         AppUser user = getUser(userId);
+        // 한 사용자가 여러 시설을 임의 생성해 소속 범위를 벗어나지 않도록 최초 등록만 허용합니다.
         if (user.getFacility() != null) {
             throw new ApiException(HttpStatus.CONFLICT, "FACILITY_ALREADY_ASSIGNED", "이미 소속 시설이 등록되어 있습니다.");
         }
 
+        // 시설을 먼저 저장해 생성된 facility_id를 확보한 뒤 현재 사용자에게 소속 시설로 연결합니다.
         Facility facility = facilityRepository.save(toNewEntity(request));
         user.assignFacility(facility);
         appUserRepository.save(user);
@@ -55,6 +57,7 @@ public class FacilityService {
 
     @Transactional
     public FacilityResponse updateMine(Long userId, FacilityRequest request) {
+        // 영속 상태의 Facility를 변경하므로 트랜잭션 종료 시 JPA 변경 감지가 UPDATE를 실행합니다.
         Facility facility = getFacility(getUser(userId));
         facility.update(request.name().trim(), request.facilityType().trim(), trimToNull(request.address()),
             trimToNull(request.contactName()), request.defaultMealCount(), request.breakfastMealCount(),
@@ -94,6 +97,7 @@ public class FacilityService {
     }
 
     private Facility toNewEntity(FacilityRequest request) {
+        // 필수 문자열의 바깥 공백을 제거하고 선택 문자열의 공백 입력은 null로 정규화합니다.
         return new Facility(request.name().trim(), request.facilityType().trim(), trimToNull(request.address()),
             trimToNull(request.contactName()), request.defaultMealCount(), request.breakfastMealCount(),
             request.lunchMealCount(), request.dinnerMealCount(), request.targetFoodCost());
