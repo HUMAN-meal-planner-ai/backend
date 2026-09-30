@@ -7,8 +7,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.format.annotation.DateTimeFormat;
+import java.time.LocalDate;
+import java.time.YearMonth;
 
 import com.human.backend.auth.service.UserPrincipal;
 import com.human.backend.facility.dto.request.FacilityRequest;
@@ -38,6 +42,13 @@ public class FacilityController {
     @GetMapping("/me")
     public FacilityResponse getMine(@AuthenticationPrincipal UserPrincipal principal) {
         return facilityService.getMine(principal.userId());
+    }
+
+    @PostMapping("/me/monthly-budget")
+    public FacilityResponse saveMyMonthlyBudget(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
+        return facilityService.saveMonthlyBudget(principal.userId(), YearMonth.from(month));
     }
 
     @PatchMapping("/me")

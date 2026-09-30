@@ -772,6 +772,28 @@ public class MemoryCostRepository implements CostRepository {
     public Optional<FacilityBudgetVo> findFacilityBudget(Long facilityId, YearMonth month) {
         String key = facilityId + ":" + month;
 
+        if (jdbcTemplate != null && facilityId != null && month != null) {
+            try {
+                List<FacilityBudgetVo> currentDatabaseBudget = jdbcTemplate.query(
+                        "SELECT mb.facility_id, mb.budget_month, mb.budget_amount, f.name "
+                                + "FROM mealfit.monthly_budget mb JOIN mealfit.facility f ON f.facility_id = mb.facility_id "
+                                + "WHERE mb.facility_id = ? AND LEFT(CAST(mb.budget_month AS VARCHAR), 7) = ? "
+                                + "ORDER BY mb.budget_month DESC LIMIT 1",
+                        (resultSet, rowNumber) -> new FacilityBudgetVo(
+                                resultSet.getLong("facility_id"),
+                                resultSet.getString("name"),
+                                YearMonth.parse(resultSet.getString("budget_month").substring(0, 7)),
+                                resultSet.getBigDecimal("budget_amount")),
+                        facilityId,
+                        month.toString());
+                if (!currentDatabaseBudget.isEmpty()) {
+                    return Optional.of(currentDatabaseBudget.get(0));
+                }
+            } catch (Exception e) {
+                log.debug(" >> [MemoryCostRepository] 월 예산 실시간 조회 실패, 캐시를 사용합니다: {}", e.getMessage());
+            }
+        }
+
         // 1순위: DB 예산 캐시
         FacilityBudgetVo dbBudget = dbBudgetMap.get(key);
         if (dbBudget != null) {
