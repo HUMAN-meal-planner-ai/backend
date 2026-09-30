@@ -166,8 +166,8 @@ public class CostController {
         return ResponseEntity.ok(responses);
     }
 
-    // 11. 이번 주·다음 주 예상 비용 및 월 잔여 예산 기준 초과 위험 분석 API
-    // 예시 호출: GET /api/cost/budget-risk?facilityId=1&baseDate=2026-09-17
+    // 11. 1주간(이번 주) 및 2주간(이번 주+다음 주) 시뮬레이션 기반 예산 초과 위험 분석 API (BUDG-002)
+    // 예시 호출: GET /api/cost/budget-risk?facilityId=1 (baseDate 미지정 시 오늘 기준 자동 적용)
     @GetMapping("/budget-risk")
     public ResponseEntity<BudgetRiskResponse> getBudgetRisk(
             @RequestParam(name = "facilityId", defaultValue = "1") Long facilityId,

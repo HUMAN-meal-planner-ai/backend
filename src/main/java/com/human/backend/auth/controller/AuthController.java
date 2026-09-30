@@ -35,7 +35,7 @@ public class AuthController {
     }
 
     @GetMapping("/email-check")
-    public EmailCheckResponse checkEmail(@RequestParam @NotBlank @Email String email) {
+    public EmailCheckResponse checkEmail(@RequestParam(name = "email") @NotBlank @Email String email) {
         return authService.checkEmail(email);
     }
 

@@ -71,17 +71,17 @@ public final class CostCalculationUtils {
     }
 
     /**
-     * 연월 문자열(YYYY-MM) 안전 파싱 (null 또는 파싱 실패 시 기본 기준일의 연월 반환)
+     * 연월 문자열(YYYY-MM) 안전 파싱 (null 또는 파싱 실패 시 현재 연월 반환)
      */
     public static YearMonth parseYearMonth(String yearMonthStr) {
         if (yearMonthStr == null || yearMonthStr.isBlank()) {
-            return YearMonth.from(DEFAULT_BASE_DATE);
+            return YearMonth.now();
         }
         try {
             return YearMonth.parse(yearMonthStr.trim());
         } catch (Exception e) {
-            log.warn(">> 잘못된 연월 형식('{}')으로 기본 연월({})을 적용합니다.", yearMonthStr, DEFAULT_BASE_DATE);
-            return YearMonth.from(DEFAULT_BASE_DATE);
+            log.warn(">> 잘못된 연월 형식('{}')으로 현재 연월({})을 적용합니다.", yearMonthStr, YearMonth.now());
+            return YearMonth.now();
         }
     }
 
@@ -130,10 +130,17 @@ public final class CostCalculationUtils {
     }
 
     /**
-     * 예측 기준일자 방어 처리 (null일 경우 기본 예측기준일 보정)
+     * 분석 기준일자 방어 처리 (null일 경우 오늘 일자 LocalDate.now() 보정)
+     */
+    public static LocalDate resolveBaseDate(LocalDate baseDate) {
+        return (baseDate != null) ? baseDate : LocalDate.now();
+    }
+
+    /**
+     * 예측 기준일자 방어 처리 (null일 경우 오늘 일자 LocalDate.now() 보정)
      */
     public static LocalDate resolveTargetDate(LocalDate targetDate) {
-        return (targetDate != null) ? targetDate : DEFAULT_PREDICTION_DATE;
+        return (targetDate != null) ? targetDate : LocalDate.now();
     }
 }
 

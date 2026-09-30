@@ -53,7 +53,7 @@ public class MealPlanCostService {
      */
     public WeeklyMealPlanCostResponse calculateWeeklyMealPlanCost(Long facilityId, LocalDate startDate) {
         Long targetFacilityId = (facilityId != null) ? facilityId : DEFAULT_FACILITY_ID;
-        LocalDate weekStart = (startDate != null) ? startDate : DEFAULT_BASE_DATE.with(DayOfWeek.MONDAY);
+        LocalDate weekStart = (startDate != null) ? startDate : LocalDate.now().with(DayOfWeek.MONDAY);
         LocalDate weekEnd = weekStart.plusDays(6);
 
         String facilityName = costRepository.findFacilityBudget(targetFacilityId, YearMonth.from(weekStart))
@@ -82,12 +82,18 @@ public class MealPlanCostService {
                 dailyTotalCost = dailyTotalCost.add(mealTotalCost);
                 dailyMealCount += plan.getMealCount();
 
+                List<Long> menuIds = costRepository.findMenuIdsByPlanId(plan.getPlanId());
+                String menuNames = menuIds.stream()
+                        .map(mId -> costRepository.findMenuNameById(mId).orElse("메뉴 " + mId))
+                        .collect(Collectors.joining(", "));
+
                 mealDetails.add(WeeklyMealPlanCostResponse.MealPlanDetail.builder()
                         .planId(plan.getPlanId())
                         .mealType(plan.getMealType())
                         .mealCount(plan.getMealCount())
                         .costPerPerson(plan.getExpectedCostPerPerson())
                         .totalMealCost(mealTotalCost)
+                        .menuNames(menuNames.isBlank() ? "편성 메뉴 없음" : menuNames)
                         .build());
             }
 

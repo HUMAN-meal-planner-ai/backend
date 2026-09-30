@@ -50,16 +50,18 @@ public class BudgetAnalysisService {
     private final CostRepository costRepository;
 
     /**
-     * 이번 주·다음 주 예상 비용과 월 잔여 예산 기준 예산 초과 위험 분석 (BUDG-002)
+     * 이번 주(1주) 및 이번 주+다음 주(2주) 예상 비용과 월 잔여 예산 기준 예산 초과 위험 분석 (BUDG-002)
+     * - 1주 시뮬레이션: 이번 주 식단 소요액 기준 잔여 예산 및 초과 위험 진단
+     * - 2주 시뮬레이션: 이번 주 + 다음 주 2주 누적 소요액 기준 잔여 예산 및 초과 위험 진단
      */
     public BudgetRiskResponse evaluateBudgetRisk(Long facilityId, LocalDate baseDate) {
         Long targetFacilityId = (facilityId != null) ? facilityId : DEFAULT_FACILITY_ID;
-        LocalDate targetBaseDate = (baseDate != null) ? baseDate : DEFAULT_BASE_DATE;
+        LocalDate targetBaseDate = resolveBaseDate(baseDate);
 
         YearMonth budgetMonth = YearMonth.from(targetBaseDate);
         LocalDate monthStart = budgetMonth.atDay(1);
 
-        // 1. 이번 주 / 다음 주 기간 산출 (월요일 ~ 일요일 기준)
+        // 1. 이번 주(1주) / 다음 주 기간 산출 (월요일 ~ 일요일 기준)
         LocalDate thisWeekMonday = targetBaseDate.with(DayOfWeek.MONDAY);
         LocalDate thisWeekSunday = targetBaseDate.with(DayOfWeek.SUNDAY);
         LocalDate nextWeekMonday = thisWeekMonday.plusWeeks(1);
@@ -81,34 +83,47 @@ public class BudgetAnalysisService {
             currentSpentCost = calculateTotalMealPlansCost(pastPlans);
         }
 
-        // 4. 이번 주 식단 목록 및 예상 비용
+        // 4. 이번 주(1주차) 식단 목록 및 예상 비용
         List<MealPlanCostVo> thisWeekPlans = costRepository.findMealPlansByFacilityAndDateRange(targetFacilityId,
                 thisWeekMonday, thisWeekSunday);
         BigDecimal thisWeekExpectedCost = calculateTotalMealPlansCost(thisWeekPlans);
 
-        // 5. 다음 주 식단 목록 및 예상 비용
+        // 5. 다음 주(2주차) 식단 목록 및 예상 비용
         List<MealPlanCostVo> nextWeekPlans = costRepository.findMealPlansByFacilityAndDateRange(targetFacilityId,
                 nextWeekMonday, nextWeekSunday);
         BigDecimal nextWeekExpectedCost = calculateTotalMealPlansCost(nextWeekPlans);
 
-        // 6. 예산 및 잔여액 계산
         BigDecimal monthlyRemainingBudget = monthlyBudget.subtract(currentSpentCost);
-        BigDecimal twoWeeksTotalExpectedCost = thisWeekExpectedCost.add(nextWeekExpectedCost);
-        BigDecimal projectedRemainingBudget = monthlyRemainingBudget.subtract(twoWeeksTotalExpectedCost);
 
-        // 7. 초과 위험도 및 경고 판정
-        boolean isRisk = projectedRemainingBudget.compareTo(BigDecimal.ZERO) < 0;
-        BigDecimal exceededAmount = isRisk ? projectedRemainingBudget.abs() : BigDecimal.ZERO;
-        String riskLevel = determineRiskLevel(isRisk, twoWeeksTotalExpectedCost, monthlyRemainingBudget);
-        String warningMessage = buildWarningMessage(riskLevel, twoWeeksTotalExpectedCost, monthlyRemainingBudget,
-                exceededAmount);
+        // =========================================================================
+        // 6. [1주간 시뮬레이션] 이번 주 기준 위험 및 잔여 예산 진단
+        // =========================================================================
+        BigDecimal oneWeekExpectedCost = thisWeekExpectedCost;
+        BigDecimal oneWeekProjectedRemainingBudget = monthlyRemainingBudget.subtract(oneWeekExpectedCost);
+        boolean oneWeekIsRisk = oneWeekProjectedRemainingBudget.compareTo(BigDecimal.ZERO) < 0;
+        BigDecimal oneWeekExceededAmount = oneWeekIsRisk ? oneWeekProjectedRemainingBudget.abs() : BigDecimal.ZERO;
+        String oneWeekRiskLevel = determineRiskLevel(oneWeekIsRisk, oneWeekExpectedCost, monthlyRemainingBudget);
+        String oneWeekWarningMessage = buildPeriodWarningMessage("1주간(이번 주)", oneWeekRiskLevel, oneWeekExpectedCost,
+                monthlyRemainingBudget, oneWeekExceededAmount);
+
+        // =========================================================================
+        // 7. [2주간 시뮬레이션] 이번 주 + 다음 주 누적 위험 및 잔여 예산 진단
+        // =========================================================================
+        BigDecimal twoWeeksTotalExpectedCost = thisWeekExpectedCost.add(nextWeekExpectedCost);
+        BigDecimal twoWeeksProjectedRemainingBudget = monthlyRemainingBudget.subtract(twoWeeksTotalExpectedCost);
+        boolean twoWeeksIsRisk = twoWeeksProjectedRemainingBudget.compareTo(BigDecimal.ZERO) < 0;
+        BigDecimal twoWeeksExceededAmount = twoWeeksIsRisk ? twoWeeksProjectedRemainingBudget.abs() : BigDecimal.ZERO;
+        String twoWeeksRiskLevel = determineRiskLevel(twoWeeksIsRisk, twoWeeksTotalExpectedCost, monthlyRemainingBudget);
+        String twoWeeksWarningMessage = buildPeriodWarningMessage("2주간(이번 주+다음 주)", twoWeeksRiskLevel, twoWeeksTotalExpectedCost,
+                monthlyRemainingBudget, twoWeeksExceededAmount);
 
         // 8. 세부 DTO 매핑
         List<BudgetRiskResponse.DailyPlanCostDetail> thisWeekDetails = toDailyPlanCostDetails(thisWeekPlans);
         List<BudgetRiskResponse.DailyPlanCostDetail> nextWeekDetails = toDailyPlanCostDetails(nextWeekPlans);
 
-        log.info(">> [BUDG-002 예산 위험 분석] 시설 ID: {}, 월 예산: {}원, 잔여 예산: {}원, 2주 예상비용: {}원, 위험수준: {}",
-                targetFacilityId, monthlyBudget, monthlyRemainingBudget, twoWeeksTotalExpectedCost, riskLevel);
+        log.info(">> [BUDG-002 예산 시뮬레이션] 시설 ID: {}, 월 예산: {}원, 기집행: {}원, 잔여: {}원 | 1주예상: {}원(위험:{}), 2주예상: {}원(위험:{})",
+                targetFacilityId, monthlyBudget, currentSpentCost, monthlyRemainingBudget,
+                oneWeekExpectedCost, oneWeekRiskLevel, twoWeeksTotalExpectedCost, twoWeeksRiskLevel);
 
         return BudgetRiskResponse.builder()
                 .facilityId(targetFacilityId)
@@ -118,14 +133,28 @@ public class BudgetAnalysisService {
                 .monthlyBudget(monthlyBudget)
                 .currentSpentCost(currentSpentCost)
                 .monthlyRemainingBudget(monthlyRemainingBudget)
+                // 1주 시뮬레이션 지표
                 .thisWeekExpectedCost(thisWeekExpectedCost)
+                .oneWeekExpectedCost(oneWeekExpectedCost)
+                .oneWeekProjectedRemainingBudget(oneWeekProjectedRemainingBudget)
+                .oneWeekExceededAmount(oneWeekExceededAmount)
+                .oneWeekRiskLevel(oneWeekRiskLevel)
+                .oneWeekIsRisk(oneWeekIsRisk)
+                .oneWeekWarningMessage(oneWeekWarningMessage)
+                // 2주 시뮬레이션 지표
                 .nextWeekExpectedCost(nextWeekExpectedCost)
                 .twoWeeksTotalExpectedCost(twoWeeksTotalExpectedCost)
-                .projectedRemainingBudget(projectedRemainingBudget)
-                .exceededAmount(exceededAmount)
-                .riskLevel(riskLevel)
-                .isRisk(isRisk)
-                .warningMessage(warningMessage)
+                .twoWeeksProjectedRemainingBudget(twoWeeksProjectedRemainingBudget)
+                .twoWeeksExceededAmount(twoWeeksExceededAmount)
+                .twoWeeksRiskLevel(twoWeeksRiskLevel)
+                .twoWeeksIsRisk(twoWeeksIsRisk)
+                .twoWeeksWarningMessage(twoWeeksWarningMessage)
+                // 하위 호환 매핑 (2주 기준)
+                .projectedRemainingBudget(twoWeeksProjectedRemainingBudget)
+                .exceededAmount(twoWeeksExceededAmount)
+                .riskLevel(twoWeeksRiskLevel)
+                .isRisk(twoWeeksIsRisk)
+                .warningMessage(twoWeeksWarningMessage)
                 .thisWeekDetails(thisWeekDetails)
                 .nextWeekDetails(nextWeekDetails)
                 .build();
@@ -143,8 +172,8 @@ public class BudgetAnalysisService {
         LocalDate targetBaseDate;
         if (baseDate != null) {
             targetBaseDate = baseDate;
-        } else if (targetYearMonth.equals(YearMonth.from(DEFAULT_BASE_DATE))) {
-            targetBaseDate = DEFAULT_BASE_DATE;
+        } else if (targetYearMonth.equals(YearMonth.now())) {
+            targetBaseDate = LocalDate.now();
         } else {
             targetBaseDate = monthStart;
         }
@@ -217,12 +246,12 @@ public class BudgetAnalysisService {
                 .build();
     }
 
-    private String determineRiskLevel(boolean isRisk, BigDecimal twoWeeksCost, BigDecimal remainingBudget) {
+    private String determineRiskLevel(boolean isRisk, BigDecimal periodCost, BigDecimal remainingBudget) {
         if (isRisk) {
             return "WARNING";
         }
         if (remainingBudget.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal usageRatio = twoWeeksCost.divide(remainingBudget, PERCENT_CALC_SCALE, RoundingMode.HALF_UP);
+            BigDecimal usageRatio = periodCost.divide(remainingBudget, PERCENT_CALC_SCALE, RoundingMode.HALF_UP);
             if (usageRatio.compareTo(new BigDecimal("0.70")) >= 0) {
                 return "CAUTION";
             }
@@ -230,21 +259,21 @@ public class BudgetAnalysisService {
         return "SAFE";
     }
 
-    private String buildWarningMessage(String riskLevel, BigDecimal twoWeeksCost, BigDecimal remainingBudget,
-            BigDecimal exceededAmount) {
+    private String buildPeriodWarningMessage(String periodLabel, String riskLevel, BigDecimal periodCost,
+            BigDecimal remainingBudget, BigDecimal exceededAmount) {
         DecimalFormat df = new DecimalFormat("#,###");
         if ("WARNING".equals(riskLevel)) {
             return String.format(
-                    "🚨 [예산 초과 경고] 향후 2주간(이번 주+다음 주) 예상 식단 비용(%s원)이 월 잔여 예산(%s원)을 %s원 초과할 것으로 예상됩니다. 고원가 식단 조정 또는 대체 식재료 검토가 필요합니다.",
-                    df.format(twoWeeksCost), df.format(remainingBudget), df.format(exceededAmount));
+                    "🚨 [예산 초과 경고] %s 예상 식단 비용(%s원)이 월 잔여 예산(%s원)을 %s원 초과할 것으로 예상됩니다. 고원가 식단 조정 또는 대체 식재료 검토가 필요합니다.",
+                    periodLabel, df.format(periodCost), df.format(remainingBudget), df.format(exceededAmount));
         } else if ("CAUTION".equals(riskLevel)) {
             return String.format(
-                    "⚠️ [예산 관리 주의] 향후 2주간 예상 비용(%s원)이 월 잔여 예산(%s원)의 70%% 이상을 소진할 예정입니다. 지속적인 원가 모니터링을 권장합니다.",
-                    df.format(twoWeeksCost), df.format(remainingBudget));
+                    "⚠️ [예산 관리 주의] %s 예상 비용(%s원)이 월 잔여 예산(%s원)의 70%% 이상을 소진할 예정입니다. 지속적인 원가 모니터링을 권장합니다.",
+                    periodLabel, df.format(periodCost), df.format(remainingBudget));
         } else {
             return String.format(
-                    "✅ [예산 안정] 향후 2주간 예상 비용(%s원)이 월 잔여 예산(%s원) 범위 내에서 안정적으로 운영되고 있습니다.",
-                    df.format(twoWeeksCost), df.format(remainingBudget));
+                    "✅ [예산 안정] %s 예상 비용(%s원)이 월 잔여 예산(%s원) 범위 내에서 안정적으로 운영되고 있습니다.",
+                    periodLabel, df.format(periodCost), df.format(remainingBudget));
         }
     }
 
@@ -285,14 +314,21 @@ public class BudgetAnalysisService {
             return List.of();
         }
         return plans.stream()
-                .map(plan -> BudgetRiskResponse.DailyPlanCostDetail.builder()
-                        .planId(plan.getPlanId())
-                        .planDate(plan.getPlanDate())
-                        .mealType(plan.getMealType())
-                        .mealCount(plan.getMealCount())
-                        .costPerPerson(plan.getExpectedCostPerPerson())
-                        .totalDailyCost(plan.calculateTotalCost())
-                        .build())
+                .map(plan -> {
+                    List<Long> menuIds = costRepository.findMenuIdsByPlanId(plan.getPlanId());
+                    String menuNames = menuIds.stream()
+                            .map(mId -> costRepository.findMenuNameById(mId).orElse("메뉴 " + mId))
+                            .collect(Collectors.joining(", "));
+                    return BudgetRiskResponse.DailyPlanCostDetail.builder()
+                            .planId(plan.getPlanId())
+                            .planDate(plan.getPlanDate())
+                            .mealType(plan.getMealType())
+                            .mealCount(plan.getMealCount())
+                            .costPerPerson(plan.getExpectedCostPerPerson())
+                            .totalDailyCost(plan.calculateTotalCost())
+                            .menuNames(menuNames.isBlank() ? "편성 메뉴 없음" : menuNames)
+                            .build();
+                })
                 .collect(Collectors.toList());
     }
 }

@@ -871,12 +871,46 @@ public class MemoryCostRepository implements CostRepository {
 
     /**
      * [식단 DB 연동 + 단가 DB 연동]
-     * - 1순위: DB 식단 편성 (mealfit.meal_plan)
-     * - 2순위: CSV 식단 데이터 (meal_plan.csv Fallback)
+     * - 1순위: DB 식단 편성 (mealfit.meal_plan 실시간 조회)
+     * - 2순위: 인메모리/CSV 식단 데이터 (meal_plan.csv Fallback)
      * - 식단 내 메뉴별 1인분 원가는 DB의 최신/예측 단가를 실시간 연동하여 계산
      */
     @Override
     public List<MealPlanCostVo> findMealPlansByFacilityAndDateRange(Long facilityId, LocalDate startDate, LocalDate endDate) {
+        if (jdbcTemplate != null && facilityId != null && startDate != null && endDate != null) {
+            try {
+                String sql = """
+                    SELECT mp.plan_id, mp.facility_id, mp.plan_date, mp.meal_type, mp.meal_count
+                    FROM mealfit.meal_plan mp
+                    WHERE mp.facility_id = ? AND mp.plan_date BETWEEN ? AND ?
+                    ORDER BY mp.plan_date, mp.meal_type, mp.plan_id
+                    """;
+                List<RawMealPlanInfo> dbPlans = jdbcTemplate.query(
+                        sql,
+                        (rs, rowNum) -> {
+                            long pId = rs.getLong("plan_id");
+                            long fId = rs.getLong("facility_id");
+                            Date pDate = rs.getDate("plan_date");
+                            LocalDate planDate = (pDate != null) ? pDate.toLocalDate() : LocalDate.now();
+                            String mType = rs.getString("meal_type");
+                            int mCount = rs.getInt("meal_count");
+                            return new RawMealPlanInfo(pId, fId, planDate, mType, mCount, BigDecimal.valueOf(3500));
+                        },
+                        facilityId,
+                        Date.valueOf(startDate),
+                        Date.valueOf(endDate)
+                );
+
+                if (!dbPlans.isEmpty()) {
+                    return dbPlans.stream()
+                            .map(this::calculateRealtimeMealPlanCost)
+                            .collect(Collectors.toList());
+                }
+            } catch (Exception e) {
+                log.warn(">> [MemoryCostRepository] DB 식단 실시간 조회 실패, 캐시/Fallback 사용: {}", e.getMessage());
+            }
+        }
+
         List<RawMealPlanInfo> sourceList = !dbMealPlanList.isEmpty() ? dbMealPlanList : rawMealPlanList;
         return sourceList.stream()
                 .filter(p -> Objects.equals(p.getFacilityId(), facilityId))
@@ -889,13 +923,24 @@ public class MemoryCostRepository implements CostRepository {
 
     /**
      * [식단 메뉴 편성 DB 연동] 식단 계획(Plan ID)에 포함된 메뉴 ID 목록 조회
-     * - 1순위: DB 식단 메뉴 (mealfit.meal_plan_item)
+     * - 1순위: DB 식단 메뉴 (mealfit.meal_plan_item 실시간 조회)
      * - 2순위: CSV 식단 메뉴 (meal_plan_item.csv Fallback)
      */
     @Override
     public List<Long> findMenuIdsByPlanId(Long planId) {
         if (planId == null) {
             return Collections.emptyList();
+        }
+        if (jdbcTemplate != null) {
+            try {
+                String sql = "SELECT menu_id FROM mealfit.meal_plan_item WHERE plan_id = ? ORDER BY display_order, item_id";
+                List<Long> dbItems = jdbcTemplate.query(sql, (rs, rowNum) -> rs.getLong("menu_id"), planId);
+                if (!dbItems.isEmpty()) {
+                    return dbItems;
+                }
+            } catch (Exception e) {
+                log.debug(">> [MemoryCostRepository] DB meal_plan_item 실시간 조회 실패: {}", e.getMessage());
+            }
         }
         List<Long> dbItems = dbPlanMenuItemsMap.get(planId);
         if (dbItems != null && !dbItems.isEmpty()) {
@@ -919,6 +964,9 @@ public class MemoryCostRepository implements CostRepository {
         for (Long menuId : menuIds) {
             // DB 예측 단가 우선 조회
             List<MenuIngredientCostVo> ingredients = findPredictedIngredientsByMenuId(menuId, raw.getPlanDate());
+            if (ingredients.isEmpty()) {
+                ingredients = findLatestIngredientsByMenuId(menuId);
+            }
             if (ingredients.isEmpty()) {
                 ingredients = menuIngredientsMap.getOrDefault(menuId, Collections.emptyList());
             }
