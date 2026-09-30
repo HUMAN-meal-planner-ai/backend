@@ -66,5 +66,6 @@ public class WeeklyMealPlanCostResponse {
         private Integer mealCount;              // 끼니별 식수 인원
         private BigDecimal costPerPerson;       // 1인분 예상 단가 (최신 시세/예측 단가 반영)
         private BigDecimal totalMealCost;       // 끼니별 총 식재료비 (1인분 단가 * 식수 인원)
+        private String menuNames;               // 해당 끼니에 편성된 메뉴명 (예: "누룽지(멥쌀), 콩나물국밥")
     }
 }

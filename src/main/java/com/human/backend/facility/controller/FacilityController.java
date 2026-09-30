@@ -49,7 +49,7 @@ public class FacilityController {
     @PostMapping("/me/monthly-budget")
     public FacilityResponse saveMyMonthlyBudget(
             @AuthenticationPrincipal UserPrincipal principal,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
+            @RequestParam(name = "month") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
         return facilityService.saveMonthlyBudget(principal.userId(), YearMonth.from(month));
     }
 

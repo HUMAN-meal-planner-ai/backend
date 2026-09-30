@@ -39,7 +39,7 @@ public class MealPlanController {
     @GetMapping("/weekly")
     public MealPlanResponse findWeekly(
             @AuthenticationPrincipal UserPrincipal principal,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStartDate) {
+            @RequestParam(name = "weekStartDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStartDate) {
         return mealPlanService.findWeeklyPlan(weekStartDate, principal);
     }
 
@@ -53,8 +53,8 @@ public class MealPlanController {
     /* 특정 끼니(planId)에 포함된 개별 메뉴(menuId)를 삭제합니다. */
     @DeleteMapping("/{planId}/items/{menuId}")
     public ResponseEntity<Void> deletePlanItem(
-            @PathVariable long planId,
-            @PathVariable long menuId,
+            @PathVariable(name = "planId") long planId,
+            @PathVariable(name = "menuId") long menuId,
             @AuthenticationPrincipal UserPrincipal principal) {
         
         mealPlanService.deletePlanItem(planId, menuId, principal);
