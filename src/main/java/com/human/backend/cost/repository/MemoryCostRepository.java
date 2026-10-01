@@ -420,6 +420,47 @@ public class MemoryCostRepository implements CostRepository {
                 log.debug(">> [MemoryCostRepository] DB 예산 테이블 로드 실패(CSV Fallback 사용): {}", e.getMessage());
             }
 
+                        // 7. AI 미래 식재료 예측 단가 (price_prediction) DB 일괄 로드
+            try {
+                String predSql = """
+                    SELECT DISTINCT ON (COALESCE(ipm.ingredient_id, ps.ingredient_id), pp.target_date)
+                           COALESCE(ipm.ingredient_id, ps.ingredient_id) AS ingredient_id,
+                           pp.target_date,
+                           pp.predicted_price
+                    FROM mealfit.price_prediction pp
+                    JOIN mealfit.price_series ps ON ps.series_id = pp.series_id
+                    LEFT JOIN mealfit.ingredient_price_mapping ipm
+                           ON ipm.series_id = pp.series_id AND ipm.is_active IS TRUE AND ipm.review_status = 'APPROVED'
+                    WHERE pp.predicted_price IS NOT NULL
+                    ORDER BY COALESCE(ipm.ingredient_id, ps.ingredient_id), pp.target_date, pp.prediction_id DESC
+                    """;
+                Map<String, BigDecimal> dbPredMap = new HashMap<>();
+                jdbcTemplate.query(predSql, rs -> {
+                    long ingId = rs.getLong("ingredient_id");
+                    Object tDateObj = rs.getObject("target_date");
+                    LocalDate targetDate = null;
+                    if (tDateObj instanceof Date d) {
+                        targetDate = d.toLocalDate();
+                    } else if (tDateObj instanceof LocalDate ld) {
+                        targetDate = ld;
+                    } else if (tDateObj != null) {
+                        try {
+                            targetDate = LocalDate.parse(tDateObj.toString().trim().substring(0, 10));
+                        } catch (Exception ignored) {}
+                    }
+                    BigDecimal predPrice = rs.getBigDecimal("predicted_price");
+                    if (targetDate != null && predPrice != null && predPrice.compareTo(BigDecimal.ZERO) > 0) {
+                        dbPredMap.put(targetDate + ":" + ingId, predPrice);
+                    }
+                });
+                if (!dbPredMap.isEmpty()) {
+                    predictedPriceMap.putAll(dbPredMap);
+                    log.info(">> [MemoryCostRepository] DB AI 미래 예측 가격(price_prediction) {}건 로드 완료", dbPredMap.size());
+                }
+            } catch (Exception e) {
+                log.debug(">> [MemoryCostRepository] DB price_prediction 로드 실패(CSV Fallback 유지): {}", e.getMessage());
+            }
+
             dbLoaded = true;
             log.info(">> [MemoryCostRepository] DB 전체 데이터(메뉴, 단가, 식단, 예산) 일괄 캐싱 & 정제 완료! (활성 메뉴 {}개, 메뉴명 {}개, 식단 {}건, 예산 {}건)",
                     dbAllMenuIdsCache.size(), dbMenuNameCache.size(), dbMealPlanList.size(), dbBudgetMap.size());
