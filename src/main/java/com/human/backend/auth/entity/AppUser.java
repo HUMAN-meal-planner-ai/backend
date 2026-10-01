@@ -70,6 +70,10 @@ public class AppUser {
         this.facility = facility;
     }
 
+    public void updateName(String name) {
+        this.name = name;
+    }
+
     /**
      * 서비스 관리자가 승인한 계정의 역할을 변경할 때만 사용합니다.
      * 필드를 public으로 열지 않고 의미 있는 메서드로 변경 지점을 제한해 권한 변경 위치를 추적하기 쉽게 합니다.

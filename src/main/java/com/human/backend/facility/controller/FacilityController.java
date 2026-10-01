@@ -6,6 +6,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,10 +14,14 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.format.annotation.DateTimeFormat;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.List;
 
 import com.human.backend.auth.service.UserPrincipal;
 import com.human.backend.facility.dto.request.FacilityRequest;
+import com.human.backend.facility.dto.request.MonthlyBudgetRequest;
+import com.human.backend.facility.dto.request.ExecutedAmountRequest;
 import com.human.backend.facility.dto.response.FacilityResponse;
+import com.human.backend.facility.dto.response.MonthlyBudgetResponse;
 import com.human.backend.facility.service.FacilityService;
 
 import jakarta.validation.Valid;
@@ -46,12 +51,35 @@ public class FacilityController {
         return facilityService.getMine(principal.userId());
     }
 
+    @GetMapping("/me/monthly-budgets")
+    public List<MonthlyBudgetResponse> getMyMonthlyBudgets(@AuthenticationPrincipal UserPrincipal principal) {
+        return facilityService.getMyMonthlyBudgets(principal.userId());
+    }
+
     @PostMapping("/me/monthly-budget")
     public FacilityResponse saveMyMonthlyBudget(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
         return facilityService.saveMonthlyBudget(principal.userId(), YearMonth.from(month));
     }
+
+    @PutMapping("/me/monthly-budget")
+    public MonthlyBudgetResponse updateMyMonthlyBudget(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month,
+            @Valid @RequestBody MonthlyBudgetRequest request) {
+        return facilityService.updateMyMonthlyBudget(
+            principal.userId(), YearMonth.from(month), request.budgetAmount());
+    }
+
+            @PutMapping("/me/monthly-budget/executed")
+            public MonthlyBudgetResponse updateMyExecutedAmount(
+                @AuthenticationPrincipal UserPrincipal principal,
+                @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month,
+                @Valid @RequestBody ExecutedAmountRequest request) {
+            return facilityService.updateMyExecutedAmount(
+                principal.userId(), YearMonth.from(month), request.executedAmount());
+            }
 
     @PatchMapping("/me")
     public FacilityResponse updateMine(

@@ -3,6 +3,7 @@ package com.human.backend.facility.dto.request;
 import java.math.BigDecimal;
 
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -22,5 +23,6 @@ public record FacilityRequest(
         @Min(0) Integer breakfastMealCount,
         @Min(0) Integer lunchMealCount,
         @Min(0) Integer dinnerMealCount,
-        @NotNull @DecimalMin("0.00") BigDecimal targetFoodCost) {
+        @NotNull @DecimalMin("0.00") BigDecimal targetFoodCost,
+        @DecimalMin("0.00") @Digits(integer = 13, fraction = 2) BigDecimal monthlyBudget) {
 }

@@ -5,9 +5,10 @@ import com.human.backend.cost.dto.response.BudgetUsageRateResponse;
 import com.human.backend.cost.entity.FacilityBudgetVo;
 import com.human.backend.cost.entity.MealPlanCostVo;
 import com.human.backend.cost.repository.CostRepository;
-import lombok.RequiredArgsConstructor;
+import com.human.backend.facility.repository.MonthlyBudgetRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -44,10 +45,20 @@ import static com.human.backend.cost.util.CostConstants.*;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class BudgetAnalysisService {
 
     private final CostRepository costRepository;
+    private final MonthlyBudgetRepository monthlyBudgetRepository;
+
+    public BudgetAnalysisService(CostRepository costRepository) {
+        this(costRepository, null);
+    }
+
+    @Autowired
+    public BudgetAnalysisService(CostRepository costRepository, MonthlyBudgetRepository monthlyBudgetRepository) {
+        this.costRepository = costRepository;
+        this.monthlyBudgetRepository = monthlyBudgetRepository;
+    }
 
     /**
      * 이번 주·다음 주 예상 비용과 월 잔여 예산 기준 예산 초과 위험 분석 (BUDG-002)
@@ -72,14 +83,11 @@ public class BudgetAnalysisService {
 
         BigDecimal monthlyBudget = budgetVo.getBudgetAmount();
 
-        // 3. 월초부터 이번 주 직전(일요일)까지의 과거 누적 집행 비용
-        BigDecimal currentSpentCost = BigDecimal.ZERO;
-        if (thisWeekMonday.isAfter(monthStart)) {
-            LocalDate pastEnd = thisWeekMonday.minusDays(1);
-            List<MealPlanCostVo> pastPlans = costRepository.findMealPlansByFacilityAndDateRange(targetFacilityId,
-                    monthStart, pastEnd);
-            currentSpentCost = calculateTotalMealPlansCost(pastPlans);
-        }
+        // 3. 기 집행액은 결제·영수증 데이터가 없으므로 사용자가 저장한 수동 금액만 사용합니다.
+        BigDecimal currentSpentCost = monthlyBudgetRepository == null
+            ? BigDecimal.ZERO
+            : monthlyBudgetRepository.findExecutedAmount(targetFacilityId, budgetMonth)
+                .orElse(BigDecimal.ZERO);
 
         // 4. 이번 주 식단 목록 및 예상 비용
         List<MealPlanCostVo> thisWeekPlans = costRepository.findMealPlansByFacilityAndDateRange(targetFacilityId,
@@ -155,14 +163,11 @@ public class BudgetAnalysisService {
                         DEFAULT_MONTHLY_BUDGET));
         BigDecimal monthlyBudget = budgetVo.getBudgetAmount();
 
-        // 2. 기준일 이전 기 집행(과거) 식단 비용 산출
-        BigDecimal actualSpentCost = BigDecimal.ZERO;
-        if (targetBaseDate.isAfter(monthStart)) {
-            LocalDate pastEnd = targetBaseDate.minusDays(1);
-            List<MealPlanCostVo> pastPlans = costRepository.findMealPlansByFacilityAndDateRange(targetFacilityId,
-                    monthStart, pastEnd);
-            actualSpentCost = calculateTotalMealPlansCost(pastPlans);
-        }
+        // 2. 기 집행액은 시스템이 추정하지 않고 사용자가 입력한 수동 금액을 사용합니다.
+        BigDecimal actualSpentCost = monthlyBudgetRepository == null
+            ? BigDecimal.ZERO
+            : monthlyBudgetRepository.findExecutedAmount(targetFacilityId, targetYearMonth)
+                .orElse(BigDecimal.ZERO);
 
         // 3. 기준일부터 월말까지 잔여 예상 식단 비용 산출
         BigDecimal projectedRemainingCost = BigDecimal.ZERO;

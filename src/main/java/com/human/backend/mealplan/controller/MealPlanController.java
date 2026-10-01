@@ -1,6 +1,5 @@
 package com.human.backend.mealplan.controller;
 
-import com.human.backend.mealplan.dto.request.MealPlanReconfigureRequest;
 import com.human.backend.mealplan.dto.request.MealPlanSaveRequest;
 import com.human.backend.mealplan.dto.response.MealPlanResponse;
 import com.human.backend.mealplan.service.MealPlanService;
@@ -41,13 +40,6 @@ public class MealPlanController {
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStartDate) {
         return mealPlanService.findWeeklyPlan(weekStartDate, principal);
-    }
-
-    @PostMapping("/reconfigure")
-    public MealPlanResponse reconfigure(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @Valid @RequestBody MealPlanReconfigureRequest request) {
-        return mealPlanService.reconfigure(request, principal);
     }
 
     /* 특정 끼니(planId)에 포함된 개별 메뉴(menuId)를 삭제합니다. */
