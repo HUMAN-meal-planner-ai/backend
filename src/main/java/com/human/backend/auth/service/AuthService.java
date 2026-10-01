@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.human.backend.auth.dto.request.LoginRequest;
+import com.human.backend.auth.dto.request.ProfileUpdateRequest;
 import com.human.backend.auth.dto.request.SignupRequest;
 import com.human.backend.auth.dto.response.EmailCheckResponse;
 import com.human.backend.auth.dto.response.LoginResponse;
@@ -73,6 +74,14 @@ public class AuthService {
         AppUser user = appUserRepository.findById(userId)
             .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "사용자를 찾을 수 없습니다."));
         return UserResponse.from(user);
+    }
+
+    @Transactional
+    public UserResponse updateMe(Long userId, ProfileUpdateRequest request) {
+        AppUser user = appUserRepository.findById(userId)
+            .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "사용자를 찾을 수 없습니다."));
+        user.updateName(request.name().trim());
+        return UserResponse.from(appUserRepository.save(user));
     }
 
     private String normalizeEmail(String email) {

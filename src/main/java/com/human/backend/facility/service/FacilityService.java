@@ -6,11 +6,15 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.util.List;
+import java.util.stream.IntStream;
 
 import com.human.backend.auth.entity.AppUser;
 import com.human.backend.auth.repository.AppUserRepository;
 import com.human.backend.facility.dto.request.FacilityRequest;
+import com.human.backend.facility.dto.request.ExecutedAmountRequest;
 import com.human.backend.facility.dto.response.FacilityResponse;
+import com.human.backend.facility.dto.response.MonthlyBudgetResponse;
 import com.human.backend.facility.entity.Facility;
 import com.human.backend.facility.repository.FacilityRepository;
 import com.human.backend.facility.repository.MonthlyBudgetRepository;
@@ -43,6 +47,9 @@ public class FacilityService {
         user.assignFacility(facility);
         appUserRepository.save(user);
         YearMonth currentMonth = currentMonth();
+        if (request.monthlyBudget() != null) {
+            monthlyBudgetRepository.saveMonth(facility.getId(), currentMonth, request.monthlyBudget());
+        }
         BigDecimal monthlyBudget = monthlyBudgetRepository.findBudget(facility.getId(), currentMonth).orElse(null);
         return FacilityResponse.from(facility, currentMonth, monthlyBudget);
     }
@@ -69,6 +76,7 @@ public class FacilityService {
 
     @Transactional
     public FacilityResponse saveMonthlyBudget(Long userId, YearMonth month) {
+        validateMonthlyBudgetMonth(month);
         Facility facility = getFacility(getUser(userId));
         int totalMealCount = monthlyBudgetRepository.findMonthlyMealCount(facility.getId(), month);
         if (totalMealCount < 1) {
@@ -108,5 +116,45 @@ public class FacilityService {
             return null;
         }
         return value.trim();
+    }
+
+    @Transactional(readOnly = true)
+    public List<MonthlyBudgetResponse> getMyMonthlyBudgets(Long userId) {
+        Facility facility = getFacility(getUser(userId));
+        YearMonth currentMonth = currentMonth();
+        return IntStream.range(0, 6)
+            .mapToObj(offset -> {
+                YearMonth month = currentMonth.plusMonths(offset);
+                BigDecimal amount = monthlyBudgetRepository.findBudget(facility.getId(), month).orElse(null);
+                BigDecimal executed = monthlyBudgetRepository.findExecutedAmount(facility.getId(), month).orElse(null);
+                return new MonthlyBudgetResponse(month.toString(), amount, executed);
+            })
+            .toList();
+    }
+
+    @Transactional
+    public MonthlyBudgetResponse updateMyMonthlyBudget(Long userId, YearMonth month, BigDecimal amount) {
+        validateMonthlyBudgetMonth(month);
+        Facility facility = getFacility(getUser(userId));
+        monthlyBudgetRepository.saveMonth(facility.getId(), month, amount);
+        BigDecimal executed = monthlyBudgetRepository.findExecutedAmount(facility.getId(), month).orElse(null);
+        return new MonthlyBudgetResponse(month.toString(), amount, executed);
+    }
+
+    @Transactional
+    public MonthlyBudgetResponse updateMyExecutedAmount(Long userId, YearMonth month, BigDecimal amount) {
+        validateMonthlyBudgetMonth(month);
+        Facility facility = getFacility(getUser(userId));
+        monthlyBudgetRepository.saveExecutedAmount(facility.getId(), month, amount);
+        BigDecimal budget = monthlyBudgetRepository.findBudget(facility.getId(), month).orElse(BigDecimal.ZERO);
+        return new MonthlyBudgetResponse(month.toString(), budget, amount);
+    }
+
+    private void validateMonthlyBudgetMonth(YearMonth month) {
+        YearMonth currentMonth = currentMonth();
+        if (month.isBefore(currentMonth) || month.isAfter(currentMonth.plusMonths(5))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "MONTHLY_BUDGET_MONTH_OUT_OF_RANGE",
+                "월 예산은 이번 달부터 5개월 뒤까지 저장할 수 있습니다.");
+        }
     }
 }

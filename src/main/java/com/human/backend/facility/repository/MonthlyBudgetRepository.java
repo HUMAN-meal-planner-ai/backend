@@ -3,6 +3,7 @@ package com.human.backend.facility.repository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,12 +22,27 @@ public class MonthlyBudgetRepository {
     @Transactional
     public void saveMonth(Long facilityId, YearMonth month, BigDecimal amount) {
         LocalDate monthStart = month.atDay(1);
-        jdbcTemplate.update(
-            "DELETE FROM mealfit.monthly_budget WHERE facility_id = ? AND budget_month = ?",
-            facilityId, monthStart);
-        jdbcTemplate.update(
-            "INSERT INTO mealfit.monthly_budget (facility_id, budget_month, budget_amount) VALUES (?, ?, ?)",
-            facilityId, monthStart, amount);
+        int updated = jdbcTemplate.update(
+            "UPDATE mealfit.monthly_budget SET budget_amount = ? WHERE facility_id = ? AND budget_month = ?",
+            amount, facilityId, monthStart);
+        if (updated == 0) {
+            jdbcTemplate.update(
+                "INSERT INTO mealfit.monthly_budget (facility_id, budget_month, budget_amount) VALUES (?, ?, ?)",
+                facilityId, monthStart, amount);
+        }
+    }
+
+    @Transactional
+    public void saveExecutedAmount(Long facilityId, YearMonth month, BigDecimal amount) {
+        LocalDate monthStart = month.atDay(1);
+        int updated = jdbcTemplate.update(
+            "UPDATE mealfit.monthly_budget SET executed_amount = ? WHERE facility_id = ? AND budget_month = ?",
+            amount, facilityId, monthStart);
+        if (updated == 0) {
+            jdbcTemplate.update(
+                "INSERT INTO mealfit.monthly_budget (facility_id, budget_month, budget_amount, executed_amount) VALUES (?, ?, ?, ?)",
+                facilityId, monthStart, BigDecimal.ZERO, amount);
+        }
     }
 
     public int findMonthlyMealCount(Long facilityId, YearMonth month) {
@@ -47,5 +63,16 @@ public class MonthlyBudgetRepository {
                 month.atDay(1))
                 .stream()
                 .findFirst();
+    }
+
+    public Optional<BigDecimal> findExecutedAmount(Long facilityId, YearMonth month) {
+        return jdbcTemplate.query(
+            "SELECT executed_amount FROM mealfit.monthly_budget WHERE facility_id = ? AND budget_month = ? LIMIT 1",
+            (resultSet, rowNumber) -> resultSet.getBigDecimal("executed_amount"),
+            facilityId,
+            month.atDay(1))
+            .stream()
+            .filter(Objects::nonNull)
+            .findFirst();
     }
 }

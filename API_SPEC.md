@@ -90,9 +90,12 @@ Authorization: Bearer {accessToken}
 | 인증 | POST | `/api/auth/signup` | 불필요 | 이메일 회원가입 |
 | 인증 | POST | `/api/auth/login` | 불필요 | 로그인 및 JWT 발급 |
 | 인증 | GET | `/api/auth/me` | 필요 | 현재 로그인 사용자 조회 |
+| 인증 | PATCH | `/api/auth/me` | 필요 | 현재 로그인 사용자 이름 수정 |
 | 인증 | POST | `/api/auth/logout` | 필요 | 로그아웃 응답 |
 | 시설 | POST | `/api/facilities` | 필요 | 사용자 소속 시설 생성 |
 | 시설 | GET | `/api/facilities/me` | 필요 | 내 시설 조회 |
+| 시설 | GET | `/api/facilities/me/monthly-budgets` | 필요 | 이번 달부터 5개월 뒤까지 월 예산 조회 |
+| 시설 | PUT | `/api/facilities/me/monthly-budget?month=YYYY-MM-01` | 필요 | 허용 월의 예산 직접 저장 |
 | 시설 | PATCH | `/api/facilities/me` | 필요 | 내 시설 수정 |
 | 원가 | GET | `/api/cost/menus` | 필요 | 전체 메뉴 원가 계산 |
 | 원가 | GET | `/api/cost/menus/{menuId}` | 필요 | 단일 메뉴 원가 계산 |
@@ -342,6 +345,24 @@ Authorization: Bearer {accessToken}
 
 ---
 
+### 4.5 현재 사용자 이름 수정
+
+현재 로그인한 사용자의 표시 이름을 수정합니다. 이메일은 로그인 식별자로 사용되므로 이 API에서 변경할 수 없습니다.
+
+```http
+PATCH /api/auth/me
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+```json
+{
+  "name": "새 이름"
+}
+```
+
+권한은 계정 설정 영역이므로 이 API로 변경할 수 없습니다.
+
 ## 5. 시설 API
 
 ### 5.1 시설 요청·응답 모델
@@ -440,7 +461,32 @@ Authorization: Bearer {accessToken}
 | `401` | 인증 오류 또는 `USER_NOT_FOUND` | 인증 실패 또는 사용자 없음 |
 | `404` | `FACILITY_NOT_FOUND` | 사용자에게 등록된 시설이 없음 |
 
-### 5.4 내 시설 수정
+### 5.4 내 월별 예산 조회 및 저장
+
+마이페이지에서 사용할 이번 달과 이후 5개월의 예산을 조회합니다. 아직 저장하지 않은 월은 `budgetAmount: null`로 반환됩니다.
+
+```http
+GET /api/facilities/me/monthly-budgets
+Authorization: Bearer {accessToken}
+```
+
+예산 금액은 해당 사용자의 시설에 연결해 저장합니다. `month`는 `YYYY-MM-01` 형식이며 이번 달부터 5개월 뒤까지만 허용됩니다.
+
+```http
+PUT /api/facilities/me/monthly-budget?month=2026-09-01
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+```json
+{
+  "budgetAmount": 2500000
+}
+```
+
+시설 최초 설정 요청의 `monthlyBudget` 필드는 선택 사항이며, 입력하면 현재 월 예산으로 저장됩니다.
+
+### 5.5 내 시설 수정
 
 ```http
 PATCH /api/facilities/me
@@ -694,28 +740,6 @@ Authorization: Bearer {accessToken}
 ```
 
 저장된 주간 식단과 메뉴별 1인 원가를 반환합니다. 저장된 식단이 없으면 현재 구현상 `500 INTERNAL_ERROR`가 반환됩니다.
-
-### 8.3 주간 식단 재구성
-
-```http
-POST /api/meal-plans/reconfigure
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-```
-
-#### 요청 본문
-
-```json
-{
-  "weekStartDate": "2026-09-21",
-  "mealCount": 100,
-  "targetCost": 2500
-}
-```
-
-현재 구현은 목표 원가 이하 메뉴를 우선 선택하고, 바로 전날과 같은 메뉴의 반복을 피하면서 7일 식단을 생성합니다. 가격 예측 AI와 메뉴 다양성 분석은 아직 연결되지 않았습니다.
-
----
 
 ## 9. 호출 흐름 예시
 

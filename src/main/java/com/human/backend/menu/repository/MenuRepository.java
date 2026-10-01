@@ -17,13 +17,16 @@ public class MenuRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    // menu 테이블에서 메뉴 목록 조회
+        // 메뉴 목록과 각 메뉴에 연결된 고유 식재료 수를 함께 조회합니다.
     public List<MenuResponse> getMenus() {
         String sql = """
-                SELECT menu_id, menu_code, name, upper_category, category, serving_weight_g,
-                       energy_kcal, protein_g, fat_g, carbohydrate_g, sodium_mg
-                FROM mealfit.menu
-                ORDER BY menu_code
+              SELECT m.menu_id, m.menu_code, m.name, m.upper_category, m.category, m.slot_type, m.serving_weight_g,
+                  m.energy_kcal, m.protein_g, m.fat_g, m.carbohydrate_g, m.sodium_mg,
+                  (SELECT COUNT(DISTINCT mi.ingredient_id)
+                   FROM mealfit.menu_ingredient mi
+                   WHERE mi.menu_id = m.menu_id) AS food_count
+              FROM mealfit.menu m
+              ORDER BY m.menu_code
                 """;
 
         // 조회 결과를 MenuResponse DTO로 변환
@@ -44,14 +47,14 @@ public class MenuRepository {
                     .menuName(rs.getString("name"))
                     .mainCategory(mainCategory)
                     .subCategory(subCategory)
-                    .slot(MenuSlot.from(mainCategory, subCategory))
+                    .slot(toMenuSlot(rs.getString("slot_type")))
                     .weight(weight == null ? null : weight.doubleValue())
                     .energyKcal(energy == null ? null : energy.doubleValue())
                     .proteinG(protein == null ? null : protein.doubleValue())
                     .fatG(fat == null ? null : fat.doubleValue())
                     .carbohydrateG(carb == null ? null : carb.doubleValue())
                     .sodiumMg(sodium == null ? null : sodium.doubleValue())
-                    .foodCount(null)
+                    .foodCount(rs.getInt("food_count"))
                     .ingredients(List.of())
                     .build();
         });
@@ -66,12 +69,16 @@ public class MenuRepository {
                     m.name,
                     m.upper_category,
                     m.category,
+                    m.slot_type,
                     m.serving_weight_g,
                     m.energy_kcal,
                     m.protein_g,
                     m.fat_g,
                     m.carbohydrate_g,
-                    m.sodium_mg
+                    m.sodium_mg,
+                    (SELECT COUNT(DISTINCT mi_count.ingredient_id)
+                     FROM mealfit.menu_ingredient mi_count
+                     WHERE mi_count.menu_id = m.menu_id) AS food_count
                 FROM mealfit.menu m
                 LEFT JOIN mealfit.menu_ingredient mi
                     ON m.menu_id = mi.menu_id
@@ -108,14 +115,14 @@ public class MenuRepository {
                             .menuName(rs.getString("name"))
                             .mainCategory(mainCategory)
                             .subCategory(subCategory)
-                            .slot(MenuSlot.from(mainCategory, subCategory))
+                            .slot(toMenuSlot(rs.getString("slot_type")))
                             .weight(weight == null ? null : weight.doubleValue())
                             .energyKcal(energy == null ? null : energy.doubleValue())
                             .proteinG(protein == null ? null : protein.doubleValue())
                             .fatG(fat == null ? null : fat.doubleValue())
                             .carbohydrateG(carb == null ? null : carb.doubleValue())
                             .sodiumMg(sodium == null ? null : sodium.doubleValue())
-                            .foodCount(null)
+                            .foodCount(rs.getInt("food_count"))
                             .ingredients(List.of())
                             .build();
                 },
@@ -124,5 +131,16 @@ public class MenuRepository {
                 searchKeyword,
                 searchKeyword,
                 searchKeyword);
+    }
+
+    private MenuSlot toMenuSlot(String slotType) {
+        if (slotType == null || slotType.isBlank()) {
+            return MenuSlot.OTHER;
+        }
+        try {
+            return MenuSlot.valueOf(slotType.trim().toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            return MenuSlot.OTHER;
+        }
     }
 }
