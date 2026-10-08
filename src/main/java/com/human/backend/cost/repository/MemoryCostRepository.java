@@ -276,6 +276,9 @@ public class MemoryCostRepository implements CostRepository {
                 latestMap.computeIfAbsent(menuId, k -> new ArrayList<>()).add(sanitizedVo);
             });
 
+            fillMissingPricesWithCategoryMedian(latestMap);
+            markPrimaryIngredients(latestMap);
+
             dbLatestIngredientsCache.clear();
             dbLatestIngredientsCache.putAll(latestMap);
 
@@ -467,6 +470,98 @@ public class MemoryCostRepository implements CostRepository {
         } catch (Exception e) {
             log.warn(">> [MemoryCostRepository] DB 일괄 캐싱 중 오류 발생 (단건 쿼리/CSV로 대체): {}", e.getMessage());
         }
+    }
+
+    /**
+     * 단가가 없는(0원) 식재료를 같은 카테고리 식재료 단가의 중앙값으로 추정해 채운다.
+     * 추정된 항목은 mappingType=CATEGORY_AVG, 낮은 신뢰도로 표시되어 estimated로 구분된다.
+     */
+    private void fillMissingPricesWithCategoryMedian(Map<Long, List<MenuIngredientCostVo>> menuItemsMap) {
+        Map<String, List<BigDecimal>> pricesByCategory = new HashMap<>();
+        menuItemsMap.values().forEach(items -> items.forEach(item -> {
+            BigDecimal price = item.getStandardUnitPrice();
+            if (item.getIngredientCategory() != null && price != null && price.signum() > 0) {
+                pricesByCategory.computeIfAbsent(item.getIngredientCategory(), k -> new ArrayList<>()).add(price);
+            }
+        }));
+
+        Map<String, BigDecimal> medianByCategory = new HashMap<>();
+        pricesByCategory.forEach((category, prices) -> {
+            Collections.sort(prices);
+            medianByCategory.put(category, prices.get(prices.size() / 2));
+        });
+
+        int filled = 0;
+        for (List<MenuIngredientCostVo> items : menuItemsMap.values()) {
+            for (int i = 0; i < items.size(); i++) {
+                MenuIngredientCostVo item = items.get(i);
+                BigDecimal price = item.getStandardUnitPrice();
+                BigDecimal median = medianByCategory.get(item.getIngredientCategory());
+                if ((price == null || price.signum() <= 0) && median != null) {
+                    items.set(i, new MenuIngredientCostVo(
+                            item.getIngredientId(), item.getIngredientName(), item.getIngredientCategory(),
+                            item.getIsPrimary(), item.getQuantity(), median, item.getPriceDate(),
+                            "CATEGORY_MEDIAN", "CATEGORY_AVG", BigDecimal.valueOf(0.3)));
+                    filled++;
+                }
+            }
+        }
+        log.info(">> [MemoryCostRepository] 단가 미등록 식재료 {}건을 카테고리 중앙값으로 추정했습니다.", filled);
+    }
+
+    private static final List<String> NON_PRIMARY_CATEGORY_KEYWORDS = List.of("조미", "유지", "양념", "소스", "향신", "당류", "첨가");
+    private static final List<String> PROTEIN_CATEGORY_KEYWORDS = List.of("육류", "수산", "어류", "난류", "알류", "두류");
+
+    /**
+     * 메뉴별 주재료를 판별해 isPrimary를 채운다.
+     * 1) 메뉴명에 이름이 등장하는 식재료, 없으면 2) 사용량이 가장 많은 단백질 식재료,
+     * 없으면 3) 조미료·유지류를 제외하고 사용량이 가장 많은 식재료를 주재료로 본다.
+     */
+    private void markPrimaryIngredients(Map<Long, List<MenuIngredientCostVo>> menuItemsMap) {
+        menuItemsMap.forEach((menuId, items) -> {
+            String menuName = dbMenuNameCache.getOrDefault(menuId, "").replaceAll("\\s+", "");
+            Set<Integer> primaryIdx = new HashSet<>();
+
+            for (int i = 0; i < items.size(); i++) {
+                MenuIngredientCostVo item = items.get(i);
+                if (isNonPrimaryCategory(item.getIngredientCategory())) continue;
+                String token = firstIngredientToken(item.getIngredientName());
+                if (token.length() >= 2 && menuName.contains(token)) primaryIdx.add(i);
+            }
+            if (primaryIdx.isEmpty()) {
+                int top = topQuantityIndex(items, true);
+                if (top < 0) top = topQuantityIndex(items, false);
+                if (top >= 0) primaryIdx.add(top);
+            }
+            for (int idx : primaryIdx) {
+                MenuIngredientCostVo item = items.get(idx);
+                items.set(idx, new MenuIngredientCostVo(
+                        item.getIngredientId(), item.getIngredientName(), item.getIngredientCategory(),
+                        true, item.getQuantity(), item.getStandardUnitPrice(), item.getPriceDate(),
+                        item.getPriceSource(), item.getMappingType(), item.getConfidenceScore()));
+            }
+        });
+    }
+
+    private boolean isNonPrimaryCategory(String category) {
+        return category != null && NON_PRIMARY_CATEGORY_KEYWORDS.stream().anyMatch(category::contains);
+    }
+
+    private String firstIngredientToken(String ingredientName) {
+        if (ingredientName == null) return "";
+        return ingredientName.split("[,(]")[0].replaceAll("\\s+", "");
+    }
+
+    private int topQuantityIndex(List<MenuIngredientCostVo> items, boolean proteinOnly) {
+        int best = -1;
+        for (int i = 0; i < items.size(); i++) {
+            MenuIngredientCostVo item = items.get(i);
+            String category = item.getIngredientCategory();
+            if (isNonPrimaryCategory(category)) continue;
+            if (proteinOnly && (category == null || PROTEIN_CATEGORY_KEYWORDS.stream().noneMatch(category::contains))) continue;
+            if (best < 0 || item.getQuantity().compareTo(items.get(best).getQuantity()) > 0) best = i;
+        }
+        return best;
     }
 
     /**
