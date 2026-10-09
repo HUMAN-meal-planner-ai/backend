@@ -132,7 +132,7 @@ public class MealPlanService {
             throw new IllegalStateException("주간 식단을 조회하려면 먼저 시설을 등록해야 합니다.");
         }
 
-        return findWeeklyPlanForFacility(weekStartDate, user.getFacility().getId());
+        return findWeeklyPlanForFacility(weekStartDate, user.getFacility().getId(), user.getFacility().getDefaultMealCount());
     }
 
     /** 자동화 기능처럼 시설 ID를 이미 알고 있는 호출자를 위한 조회입니다. */
@@ -141,14 +141,14 @@ public class MealPlanService {
         if (facilityId == null) {
             throw new IllegalArgumentException("시설 ID가 필요합니다.");
         }
-        return findWeeklyPlanForFacility(weekStartDate, facilityId);
+        return findWeeklyPlanForFacility(weekStartDate, facilityId, null);
     }
 
-    private MealPlanResponse findWeeklyPlanForFacility(LocalDate weekStartDate, long facilityId) {
+    private MealPlanResponse findWeeklyPlanForFacility(LocalDate weekStartDate, long facilityId, Integer facilityDefaultMealCount) {
 
-        List<MealPlanResponse.MealResponse> meals = mealPlanRepository.findWeeklyPlans(
-                        facilityId, weekStartDate, weekStartDate.plusDays(6))
-                .stream()
+        List<MealPlanRepository.WeeklyMealRow> rows = mealPlanRepository.findWeeklyPlans(
+                facilityId, weekStartDate, weekStartDate.plusDays(6));
+        List<MealPlanResponse.MealResponse> meals = rows.stream()
                 .map(row -> {
                     List<MealPlanResponse.MealMenuItemResponse> menuItems = new ArrayList<>();
                     if (row.menuNames() != null && !row.menuNames().isBlank()) {
@@ -178,16 +178,26 @@ public class MealPlanService {
                 .toList();
 
         if (meals.isEmpty()) {
-            return new MealPlanResponse(weekStartDate, 0, BigDecimal.ZERO, List.of());
+            return new MealPlanResponse(weekStartDate, facilityDefaultMealCount != null ? facilityDefaultMealCount : 0, BigDecimal.ZERO, List.of());
         }
+
+        // 식수 인원은 저장된 식단의 meal_count(가장 많이 쓰인 값)를 쓰고, 없으면 시설 기본 식수 인원을 쓴다.
+        int mealCount = rows.stream()
+                .map(MealPlanRepository.WeeklyMealRow::mealCount)
+                .filter(count -> count > 0)
+                .collect(Collectors.groupingBy(count -> count, Collectors.counting()))
+                .entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(facilityDefaultMealCount != null ? facilityDefaultMealCount : 0);
 
         BigDecimal totalCost = meals.stream()
                 .map(MealPlanResponse.MealResponse::costPerPerson)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .multiply(BigDecimal.valueOf(meals.size()));
+                .multiply(BigDecimal.valueOf(mealCount));
 
-        return new MealPlanResponse(weekStartDate, meals.size(), totalCost, meals);
+        return new MealPlanResponse(weekStartDate, mealCount, totalCost, meals);
     }
 
     private MealPlanResponse.MealResponse saveMeal(AppUser user, MealPlanItemRequest item, int mealCount) {
@@ -228,3 +238,4 @@ public class MealPlanService {
 
     
 }
+

@@ -59,12 +59,7 @@ public class MealPlanRepository {
     }
 
     /** 식단 기본 정보를 저장하고 새로 만들어진 plan_id를 반환합니다. */
-    public long insertPlan(
-            long facilityId,
-            long userId,
-            LocalDate mealDate,
-            String mealType,
-            int mealCount) {
+    public long insertPlan(long facilityId, long userId, LocalDate mealDate, String mealType, int mealCount) {
         String sql = """
                 INSERT INTO mealfit.meal_plan (
                     facility_id,

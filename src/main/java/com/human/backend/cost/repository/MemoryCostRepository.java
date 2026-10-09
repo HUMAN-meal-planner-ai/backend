@@ -276,6 +276,9 @@ public class MemoryCostRepository implements CostRepository {
                 latestMap.computeIfAbsent(menuId, k -> new ArrayList<>()).add(sanitizedVo);
             });
 
+            fillMissingPricesWithCategoryMedian(latestMap);
+            markPrimaryIngredients(latestMap);
+
             dbLatestIngredientsCache.clear();
             dbLatestIngredientsCache.putAll(latestMap);
 
@@ -470,6 +473,98 @@ public class MemoryCostRepository implements CostRepository {
     }
 
     /**
+     * 단가가 없는(0원) 식재료를 같은 카테고리 식재료 단가의 중앙값으로 추정해 채운다.
+     * 추정된 항목은 mappingType=CATEGORY_AVG, 낮은 신뢰도로 표시되어 estimated로 구분된다.
+     */
+    private void fillMissingPricesWithCategoryMedian(Map<Long, List<MenuIngredientCostVo>> menuItemsMap) {
+        Map<String, List<BigDecimal>> pricesByCategory = new HashMap<>();
+        menuItemsMap.values().forEach(items -> items.forEach(item -> {
+            BigDecimal price = item.getStandardUnitPrice();
+            if (item.getIngredientCategory() != null && price != null && price.signum() > 0) {
+                pricesByCategory.computeIfAbsent(item.getIngredientCategory(), k -> new ArrayList<>()).add(price);
+            }
+        }));
+
+        Map<String, BigDecimal> medianByCategory = new HashMap<>();
+        pricesByCategory.forEach((category, prices) -> {
+            Collections.sort(prices);
+            medianByCategory.put(category, prices.get(prices.size() / 2));
+        });
+
+        int filled = 0;
+        for (List<MenuIngredientCostVo> items : menuItemsMap.values()) {
+            for (int i = 0; i < items.size(); i++) {
+                MenuIngredientCostVo item = items.get(i);
+                BigDecimal price = item.getStandardUnitPrice();
+                BigDecimal median = medianByCategory.get(item.getIngredientCategory());
+                if ((price == null || price.signum() <= 0) && median != null) {
+                    items.set(i, new MenuIngredientCostVo(
+                            item.getIngredientId(), item.getIngredientName(), item.getIngredientCategory(),
+                            item.getIsPrimary(), item.getQuantity(), median, item.getPriceDate(),
+                            "CATEGORY_MEDIAN", "CATEGORY_AVG", BigDecimal.valueOf(0.3)));
+                    filled++;
+                }
+            }
+        }
+        log.info(">> [MemoryCostRepository] 단가 미등록 식재료 {}건을 카테고리 중앙값으로 추정했습니다.", filled);
+    }
+
+    private static final List<String> NON_PRIMARY_CATEGORY_KEYWORDS = List.of("조미", "유지", "양념", "소스", "향신", "당류", "첨가");
+    private static final List<String> PROTEIN_CATEGORY_KEYWORDS = List.of("육류", "수산", "어류", "난류", "알류", "두류");
+
+    /**
+     * 메뉴별 주재료를 판별해 isPrimary를 채운다.
+     * 1) 메뉴명에 이름이 등장하는 식재료, 없으면 2) 사용량이 가장 많은 단백질 식재료,
+     * 없으면 3) 조미료·유지류를 제외하고 사용량이 가장 많은 식재료를 주재료로 본다.
+     */
+    private void markPrimaryIngredients(Map<Long, List<MenuIngredientCostVo>> menuItemsMap) {
+        menuItemsMap.forEach((menuId, items) -> {
+            String menuName = dbMenuNameCache.getOrDefault(menuId, "").replaceAll("\\s+", "");
+            Set<Integer> primaryIdx = new HashSet<>();
+
+            for (int i = 0; i < items.size(); i++) {
+                MenuIngredientCostVo item = items.get(i);
+                if (isNonPrimaryCategory(item.getIngredientCategory())) continue;
+                String token = firstIngredientToken(item.getIngredientName());
+                if (token.length() >= 2 && menuName.contains(token)) primaryIdx.add(i);
+            }
+            if (primaryIdx.isEmpty()) {
+                int top = topQuantityIndex(items, true);
+                if (top < 0) top = topQuantityIndex(items, false);
+                if (top >= 0) primaryIdx.add(top);
+            }
+            for (int idx : primaryIdx) {
+                MenuIngredientCostVo item = items.get(idx);
+                items.set(idx, new MenuIngredientCostVo(
+                        item.getIngredientId(), item.getIngredientName(), item.getIngredientCategory(),
+                        true, item.getQuantity(), item.getStandardUnitPrice(), item.getPriceDate(),
+                        item.getPriceSource(), item.getMappingType(), item.getConfidenceScore()));
+            }
+        });
+    }
+
+    private boolean isNonPrimaryCategory(String category) {
+        return category != null && NON_PRIMARY_CATEGORY_KEYWORDS.stream().anyMatch(category::contains);
+    }
+
+    private String firstIngredientToken(String ingredientName) {
+        if (ingredientName == null) return "";
+        return ingredientName.split("[,(]")[0].replaceAll("\\s+", "");
+    }
+
+    private int topQuantityIndex(List<MenuIngredientCostVo> items, boolean proteinOnly) {
+        int best = -1;
+        for (int i = 0; i < items.size(); i++) {
+            MenuIngredientCostVo item = items.get(i);
+            String category = item.getIngredientCategory();
+            if (isNonPrimaryCategory(category)) continue;
+            if (proteinOnly && (category == null || PROTEIN_CATEGORY_KEYWORDS.stream().noneMatch(category::contains))) continue;
+            if (best < 0 || item.getQuantity().compareTo(items.get(best).getQuantity()) > 0) best = i;
+        }
+        return best;
+    }
+
+    /**
      * [데이터 현실화 및 전면 정제 파이프라인]
      * 메뉴명, 카테고리, 식재료 특성을 종합하여 비현실적인 레시피 중량(quantity)과 단가를
      * 실제 단체급식 1인분 배식 기준(30g~120g)으로 정밀 정제합니다.
@@ -489,6 +584,18 @@ public class MemoryCostRepository implements CostRepository {
         boolean isRice = isRiceMenu(name, cat);
         boolean isSoup = isSoupMenu(name, cat);
         boolean isMain = isMainMenu(name, cat);
+
+        // 0. 가공식품 및 미수집 식재료 B2B 표준 납품 단가 Fallback
+        String mappingType = item.getMappingType();
+        String priceSource = item.getPriceSource();
+        BigDecimal confidenceScore = item.getConfidenceScore();
+
+        if (unitPrice.compareTo(BigDecimal.ZERO) == 0) {
+            unitPrice = resolveProcessedFoodFallbackPrice(ingName, cat);
+            mappingType = (mappingType != null && !mappingType.isEmpty()) ? mappingType : "PROCESSED_FALLBACK";
+            priceSource = (priceSource != null && !priceSource.isEmpty()) ? priceSource : "B2B_STANDARD";
+            confidenceScore = (confidenceScore != null) ? confidenceScore : BigDecimal.valueOf(0.85);
+        }
 
         // 1. 면류 (메밀국수, 모밀, 소바, 잔치국수, 칼국수, 우동, 냉면, 쫄면, 파스타, 짜장, 짬뽕 등)
         if (isNoodle) {
@@ -632,10 +739,47 @@ public class MemoryCostRepository implements CostRepository {
                 qty,
                 unitPrice,
                 item.getPriceDate(),
-                item.getPriceSource(),
-                item.getMappingType(),
-                item.getConfidenceScore()
+                priceSource,
+                mappingType,
+                confidenceScore
         );
+    }
+
+    /**
+     * KAMIS 공공 시세가 없는 가공식품/반가공품목에 대해 B2B 단체급식 표준 납품 단가를 부여합니다.
+     */
+    private BigDecimal resolveProcessedFoodFallbackPrice(String ingName, String category) {
+        String name = (ingName != null) ? ingName.toLowerCase() : "";
+        if (name.contains("누룽지") || name.contains("즉석밥")) {
+            return BigDecimal.valueOf(4.5); // 1g당 4.5원 (100g당 450원)
+        } else if (name.contains("어묵") || name.contains("오뎅") || name.contains("맛살")) {
+            return BigDecimal.valueOf(3.8); // 1g당 3.8원
+        } else if (name.contains("만두") || name.contains("교자") || name.contains("딤섬")) {
+            return BigDecimal.valueOf(5.2);
+        } else if (name.contains("떡") || name.contains("가래떡") || name.contains("떡볶이") || name.contains("경단")) {
+            return BigDecimal.valueOf(3.5);
+        } else if (name.contains("두부") || name.contains("순두부") || name.contains("유부")) {
+            return BigDecimal.valueOf(2.8);
+        } else if (name.contains("면") || name.contains("국수") || name.contains("스파게티") || name.contains("파스타") || name.contains("우동") || name.contains("라면") || name.contains("당면")) {
+            return BigDecimal.valueOf(3.0);
+        } else if (name.contains("소시지") || name.contains("햄") || name.contains("베이컨") || name.contains("비엔나")) {
+            return BigDecimal.valueOf(8.5);
+        } else if (name.contains("치즈") || name.contains("버터") || name.contains("크림")) {
+            return BigDecimal.valueOf(12.0);
+        } else if (name.contains("김가루") || name.contains("김")) {
+            return BigDecimal.valueOf(18.0);
+        } else if (name.contains("고추장") || name.contains("된장") || name.contains("간장") || name.contains("소스") || name.contains("케첩") || name.contains("마요네즈") || name.contains("양념") || name.contains("드레싱")) {
+            return BigDecimal.valueOf(4.0);
+        } else if (name.contains("밥") || name.contains("쌀") || name.contains("곡류")) {
+            return BigDecimal.valueOf(3.2);
+        } else if (name.contains("고기") || name.contains("육") || name.contains("돼지") || name.contains("소고기") || name.contains("닭") || name.contains("오리") || name.contains("패티")) {
+            return BigDecimal.valueOf(14.0);
+        } else if (name.contains("생선") || name.contains("해물") || name.contains("새우") || name.contains("오징어")) {
+            return BigDecimal.valueOf(12.0);
+        } else if (name.contains("채소") || name.contains("야채") || name.contains("나물")) {
+            return BigDecimal.valueOf(3.5);
+        }
+        return BigDecimal.valueOf(2.5); // 일반 기본 식재료 fallback
     }
 
     private boolean isNoodleMenu(String name, String category) {
