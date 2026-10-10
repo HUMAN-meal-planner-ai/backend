@@ -107,4 +107,12 @@ public interface PricePredictionRepository extends JpaRepository<PricePrediction
             """, nativeQuery = true)
     List<StoredWeeklyPrediction> findLatestWeeklyPredictions(
             @Param("seriesIds") List<Long> seriesIds);
+
+    /** 서버 재시작 시 주간 예측 누락 여부를 판단하기 위해 가장 최근 생성 시각을 조회합니다. */
+    @Query("SELECT MAX(p.generatedAt) FROM PricePrediction p WHERE p.modelVersion = 'weekly_ridge_v1'")
+    Instant findLatestWeeklyGeneratedAt();
+
+    /** 주간 예측이 이미 존재하는 가장 최근 기준일을 조회합니다. */
+    @Query("SELECT MAX(p.baseDate) FROM PricePrediction p WHERE p.modelVersion = 'weekly_ridge_v1'")
+    LocalDate findLatestWeeklyBaseDate();
 }
