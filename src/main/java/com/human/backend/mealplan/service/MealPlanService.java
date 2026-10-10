@@ -72,11 +72,8 @@ public class MealPlanService {
             String mealType = first.mealType() == null || first.mealType().isBlank() ? "LUNCH" : first.mealType().trim().toUpperCase();
 
             long planId = mealPlanRepository.insertPlan(
-                    user.getFacility().getId(),
-                    user.getId(),
-                    first.mealDate(),
-                    mealType,
-                    mealCount);
+                    user.getFacility().getId(), user.getId(),
+                    first.mealDate(), mealType, mealCount);
 
             List<MealPlanResponse.MealMenuItemResponse> menuItems = new ArrayList<>();
             List<String> menuNames = new ArrayList<>();

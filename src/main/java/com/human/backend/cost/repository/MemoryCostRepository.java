@@ -1118,7 +1118,7 @@ public class MemoryCostRepository implements CostRepository {
         }
         if (jdbcTemplate != null) {
             try {
-                String sql = "SELECT menu_id FROM mealfit.meal_plan_item WHERE plan_id = ? ORDER BY display_order, item_id";
+                String sql = "SELECT menu_id FROM mealfit.meal_plan_item WHERE plan_id = ? ORDER BY display_order, plan_item_id";
                 List<Long> dbItems = jdbcTemplate.query(sql, (rs, rowNum) -> rs.getLong("menu_id"), planId);
                 if (!dbItems.isEmpty()) {
                     return dbItems;
