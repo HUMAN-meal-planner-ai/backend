@@ -21,6 +21,10 @@ public class KamisPriceCollectionScheduler {
     private final int lookbackDays;
     private final ZoneId zoneId;
 
+    public int getLookbackDays() {
+        return lookbackDays;
+    }
+
     public KamisPriceCollectionScheduler(
             PriceService priceService,
             @Value("${kamis.collection.schedule.lookback-days:7}") int lookbackDays,
@@ -34,17 +38,21 @@ public class KamisPriceCollectionScheduler {
     }
 
     @Scheduled(
-            cron = "${kamis.collection.schedule.cron:0 0 2 * * MON}",
+            cron = "${kamis.collection.schedule.cron:0 0 10 * * *}",
             zone = "${kamis.collection.schedule.zone:Asia/Seoul}")
     public void collectRecentPrices() {
         collectRecentPrices(LocalDate.now(zoneId));
     }
 
     void collectRecentPrices(LocalDate endDate) {
+        collectRange(endDate.minusDays(lookbackDays - 1L), endDate);
+    }
+
+    /** 정기 실행과 서버 재시작 보정 실행이 함께 사용하는 수집 본체입니다. 실패해도 예외를 던지지 않습니다. */
+    public void collectRange(LocalDate startDate, LocalDate endDate) {
         Instant startedAt = Instant.now();
         long startedNanos = System.nanoTime();
-        LocalDate startDate = endDate.minusDays(lookbackDays - 1L);
-        log.info("주간 KAMIS 가격 수집을 시작합니다. 실행 시작 시각={}, 조회 기간={}~{}",
+        log.info("KAMIS 가격 수집을 시작합니다. 실행 시작 시각={}, 조회 기간={}~{}",
                 startedAt, startDate, endDate);
 
         try {
@@ -52,7 +60,7 @@ public class KamisPriceCollectionScheduler {
             logCompletion(startedAt, elapsedMillis(startedNanos), startDate, endDate, results);
         } catch (RuntimeException exception) {
             log.error(
-                    "주간 KAMIS 가격 수집에 실패했습니다. 실행 시작 시각={}, 소요 시간={}ms, "
+                    "KAMIS 가격 수집에 실패했습니다. 실행 시작 시각={}, 소요 시간={}ms, "
                             + "조회 기간={}~{}, 사유={}",
                     startedAt, elapsedMillis(startedNanos), startDate, endDate,
                     exception.getMessage(), exception);
@@ -73,7 +81,7 @@ public class KamisPriceCollectionScheduler {
         int invalidRows = sum(results, PriceTargetCollectionResult::invalidRowsSkipped);
 
         log.info(
-                "주간 KAMIS 가격 수집을 완료했습니다. 실행 시작 시각={}, 소요 시간={}ms, "
+                "KAMIS 가격 수집을 완료했습니다. 실행 시작 시각={}, 소요 시간={}ms, "
                         + "조회 기간={}~{}, 대상={}, 성공={}, 실패={}, "
                         + "조회 행={}, 신규 저장={}, 중복 제외={}, 기간 밖 제외={}, 유효하지 않은 행 제외={}",
                 startedAt, elapsedMillis, startDate, endDate,
