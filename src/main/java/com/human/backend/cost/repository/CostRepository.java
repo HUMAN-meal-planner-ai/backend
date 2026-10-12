@@ -35,6 +35,13 @@ public interface CostRepository {
     List<MenuIngredientCostVo> findLatestIngredientsByMenuId(Long menuId);
 
     /**
+     * 특정 기준일(asOfDate) 시점의 유효한 최신 식재료 구성 및 실거래 단가 정보 목록 조회
+     */
+    default List<MenuIngredientCostVo> findLatestIngredientsByMenuId(Long menuId, LocalDate asOfDate) {
+        return findLatestIngredientsByMenuId(menuId);
+    }
+
+    /**
      * 메뉴 ID 및 특정 미래 일자에 해당하는 예측 식재료 구성 및 단가 정보 목록 조회 (COST-002)
      * (예측 데이터가 없을 경우 최신 시세를 대체 적용하여 반환)
      */

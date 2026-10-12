@@ -48,20 +48,25 @@ public class MenuCostService {
      * 최신 식재료 가격과 사용 중량으로 메뉴 현재 원가를 계산한다. (단건, MENU-008, COST-001, COST-004, COST-009)
      */
     public MenuCostResponse calculateCurrentMenuCost(Long menuId, Integer mealCount, BigDecimal targetCost) {
+        return calculateCurrentMenuCost(menuId, mealCount, targetCost, null);
+    }
+
+    public MenuCostResponse calculateCurrentMenuCost(Long menuId, Integer mealCount, BigDecimal targetCost, LocalDate baseDate) {
         int validMealCount = resolveMealCount(mealCount);
         BigDecimal validTargetCost = resolveTargetCost(targetCost);
+        LocalDate asOfDate = (baseDate != null) ? baseDate : LocalDate.now();
 
         String menuName = costRepository.findMenuNameById(menuId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "MENU_NOT_FOUND",
                         "존재하지 않는 메뉴 ID입니다. ID=" + menuId));
 
-        List<MenuIngredientCostVo> items = costRepository.findLatestIngredientsByMenuId(menuId);
+        List<MenuIngredientCostVo> items = costRepository.findLatestIngredientsByMenuId(menuId, asOfDate);
         if (items.isEmpty()) {
             throw new ApiException(HttpStatus.NOT_FOUND, "MENU_INGREDIENT_NOT_FOUND",
                     "해당 메뉴에 등록된 식재료 구성 정보가 없습니다. ID=" + menuId);
         }
 
-        log.debug(">> [메뉴 현재 원가 계산] 메뉴: {} (ID: {}) | 식재료 품목: {}개", menuName, menuId, items.size());
+        log.debug(">> [메뉴 현재 원가 계산] 메뉴: {} (ID: {}) | 기준일: {} | 식재료 품목: {}개", menuName, menuId, asOfDate, items.size());
 
         BigDecimal costPerPerson = BigDecimal.ZERO;
         List<MenuCostResponse.IngredientDetail> detailList = new ArrayList<>();
@@ -83,7 +88,7 @@ public class MenuCostService {
 
         log.debug(">> [총 원가 산출] {} | 1인분: {}원 * 식수: {}명 = 총 {}원", menuName, costPerPerson, validMealCount, totalMealCost);
 
-        return MenuCostResponse.of(menuId, menuName, costPerPerson, validMealCount, totalMealCost,
+        return MenuCostResponse.of(menuId, menuName, asOfDate, costPerPerson, validMealCount, totalMealCost,
                 validTargetCost, isExceeded, exceededAmount, detailList);
     }
 
@@ -91,10 +96,14 @@ public class MenuCostService {
      * 등록된 모든 메뉴별 1인분 기준 현재 원가 일괄 산출 (MENU-008, COST-003)
      */
     public List<MenuCostResponse> calculateAllMenuCosts(Integer mealCount, BigDecimal targetCost) {
+        return calculateAllMenuCosts(mealCount, targetCost, null);
+    }
+
+    public List<MenuCostResponse> calculateAllMenuCosts(Integer mealCount, BigDecimal targetCost, LocalDate baseDate) {
         return costRepository.findAllMenuIds().stream()
                 .map(menuId -> {
                     try {
-                        return calculateCurrentMenuCost(menuId, mealCount, targetCost);
+                        return calculateCurrentMenuCost(menuId, mealCount, targetCost, baseDate);
                     } catch (Exception e) {
                         log.warn(">> [메뉴 현재 원가 일괄 계산] 메뉴 ID={} 계산 생략: {}", menuId, e.getMessage());
                         return null;

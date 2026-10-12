@@ -21,10 +21,14 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
@@ -67,6 +71,7 @@ public class MemoryCostRepository implements CostRepository {
     private final List<RawMealPlanInfo> rawMealPlanList = new CopyOnWriteArrayList<>();
     private final Map<Long, List<Long>> planMenuItemsMap = new ConcurrentHashMap<>();
     private final Map<String, BigDecimal> predictedPriceMap = new ConcurrentHashMap<>();
+    private final Map<Long, NavigableMap<LocalDate, BigDecimal>> ingredientPredictionsMap = new ConcurrentHashMap<>();
     private final Map<Long, PriceInfo> latestPriceMap = new ConcurrentHashMap<>();
 
     public MemoryCostRepository() {
@@ -112,6 +117,8 @@ public class MemoryCostRepository implements CostRepository {
     private final List<RawMealPlanInfo> dbMealPlanList = new CopyOnWriteArrayList<>();
     private final Map<Long, List<Long>> dbPlanMenuItemsMap = new ConcurrentHashMap<>();
     private final Map<String, FacilityBudgetVo> dbBudgetMap = new ConcurrentHashMap<>();
+    private record PriceHistoryRecord(BigDecimal standardUnitPrice, LocalDate priceDate) {}
+    private final Map<Long, NavigableMap<LocalDate, PriceHistoryRecord>> ingredientPriceHistoryMap = new ConcurrentHashMap<>();
     private final Map<Long, String> dbFacilityNameMap = new ConcurrentHashMap<>();
     private volatile boolean dbLoaded = false;
 
@@ -155,6 +162,7 @@ public class MemoryCostRepository implements CostRepository {
                            ip2.unit_quantity,
                            ip2.price_date
                     FROM mealfit.ingredient_price ip2
+                    WHERE ip2.price_date <= CURRENT_DATE
                     ORDER BY ip2.series_id, ip2.price_date DESC, ip2.price_id DESC
                 ),
                 price_candidates AS (
@@ -301,6 +309,39 @@ public class MemoryCostRepository implements CostRepository {
                     .toList();
             dbAllMenuIdsCache.addAll(validMenuIds);
 
+            // 2-1. 식재료별 과거 실거래가 시계열 전체 로드 (기준일 asOfDate 연동용)
+            try {
+                String historySql = """
+                    SELECT COALESCE(ipm.ingredient_id, ps.ingredient_id) AS ingredient_id,
+                           ip.price_date,
+                           ip.standard_unit_price * COALESCE(ipm.conversion_factor, 1) AS standard_unit_price
+                    FROM mealfit.ingredient_price ip
+                    JOIN mealfit.price_series ps ON ps.series_id = ip.series_id
+                    LEFT JOIN mealfit.ingredient_price_mapping ipm
+                           ON ipm.series_id = ip.series_id AND ipm.is_active IS TRUE AND ipm.review_status = 'APPROVED'
+                    WHERE ip.standard_unit_price IS NOT NULL
+                    ORDER BY COALESCE(ipm.ingredient_id, ps.ingredient_id), ip.price_date ASC
+                    """;
+                Map<Long, NavigableMap<LocalDate, PriceHistoryRecord>> historyMap = new HashMap<>();
+                jdbcTemplate.query(historySql, rs -> {
+                    long ingId = rs.getLong("ingredient_id");
+                    Date pDate = rs.getDate("price_date");
+                    BigDecimal price = rs.getBigDecimal("standard_unit_price");
+                    if (pDate != null && price != null && price.compareTo(BigDecimal.ZERO) > 0) {
+                        LocalDate date = pDate.toLocalDate();
+                        historyMap.computeIfAbsent(ingId, k -> new ConcurrentSkipListMap<>())
+                                .put(date, new PriceHistoryRecord(price, date));
+                    }
+                });
+                if (!historyMap.isEmpty()) {
+                    ingredientPriceHistoryMap.clear();
+                    ingredientPriceHistoryMap.putAll(historyMap);
+                    log.info(">> [MemoryCostRepository] DB 식재료 실거래가 시계열 이력 {}종 로드 완료", historyMap.size());
+                }
+            } catch (Exception e) {
+                log.debug(">> [MemoryCostRepository] DB ingredient_price 시계열 이력 로드 실패: {}", e.getMessage());
+            }
+
             // 3. 시설 정보 일괄 로드
             try {
                 String facSql = "SELECT facility_id, name FROM mealfit.facility";
@@ -438,6 +479,7 @@ public class MemoryCostRepository implements CostRepository {
                     ORDER BY COALESCE(ipm.ingredient_id, ps.ingredient_id), pp.target_date, pp.prediction_id DESC
                     """;
                 Map<String, BigDecimal> dbPredMap = new HashMap<>();
+                Map<Long, Map<LocalDate, BigDecimal>> dbIngPredMap = new HashMap<>();
                 jdbcTemplate.query(predSql, rs -> {
                     long ingId = rs.getLong("ingredient_id");
                     Object tDateObj = rs.getObject("target_date");
@@ -454,11 +496,16 @@ public class MemoryCostRepository implements CostRepository {
                     BigDecimal predPrice = rs.getBigDecimal("predicted_price");
                     if (targetDate != null && predPrice != null && predPrice.compareTo(BigDecimal.ZERO) > 0) {
                         dbPredMap.put(targetDate + ":" + ingId, predPrice);
+                        dbIngPredMap.computeIfAbsent(ingId, k -> new HashMap<>()).put(targetDate, predPrice);
                     }
                 });
                 if (!dbPredMap.isEmpty()) {
                     predictedPriceMap.putAll(dbPredMap);
-                    log.info(">> [MemoryCostRepository] DB AI 미래 예측 가격(price_prediction) {}건 로드 완료", dbPredMap.size());
+                    dbIngPredMap.forEach((ingId, dateMap) -> {
+                        ingredientPredictionsMap.computeIfAbsent(ingId, k -> new ConcurrentSkipListMap<>()).putAll(dateMap);
+                    });
+                    log.info(">> [MemoryCostRepository] DB AI 미래 예측 가격(price_prediction) {}건 로드 완료 (예측 대상 식재료 {}종)",
+                            dbPredMap.size(), dbIngPredMap.size());
                 }
             } catch (Exception e) {
                 log.debug(">> [MemoryCostRepository] DB price_prediction 로드 실패(CSV Fallback 유지): {}", e.getMessage());
@@ -849,6 +896,18 @@ public class MemoryCostRepository implements CostRepository {
         predictedPriceMap.clear();
         predictedPriceMap.putAll(data.getPredictedPriceMap());
 
+        ingredientPredictionsMap.clear();
+        for (Map.Entry<String, BigDecimal> entry : data.getPredictedPriceMap().entrySet()) {
+            String[] parts = entry.getKey().split(":");
+            if (parts.length == 2) {
+                try {
+                    LocalDate d = LocalDate.parse(parts[0]);
+                    Long ingId = Long.parseLong(parts[1]);
+                    ingredientPredictionsMap.computeIfAbsent(ingId, k -> new ConcurrentSkipListMap<>()).put(d, entry.getValue());
+                } catch (Exception ignored) {}
+            }
+        }
+
         menuIngredientsMap.clear();
         for (Map.Entry<Long, List<MenuIngredientCostVo>> entry : data.getMenuIngredientsMap().entrySet()) {
             Long menuId = entry.getKey();
@@ -927,8 +986,121 @@ public class MemoryCostRepository implements CostRepository {
     }
 
     /**
+     * [기준일자 연동] 메뉴 ID에 해당하는 특정 기준일(asOfDate) 시점의 최신 식재료 구성 및 실거래 단가 정보 목록 조회
+     * - asOfDate 이하(과거~기준일)의 유효한 실거래가 시계열을 조회하여 기준일 시점의 시세로 정확히 산출
+     */
+    @Override
+    public List<MenuIngredientCostVo> findLatestIngredientsByMenuId(Long menuId, LocalDate asOfDate) {
+        if (menuId == null) {
+            return Collections.emptyList();
+        }
+        List<MenuIngredientCostVo> baseList = findLatestIngredientsByMenuId(menuId);
+        if (asOfDate == null || baseList.isEmpty()) {
+            return baseList;
+        }
+
+        List<MenuIngredientCostVo> adjustedList = new ArrayList<>(baseList.size());
+        for (MenuIngredientCostVo item : baseList) {
+            Long ingId = item.getIngredientId();
+            NavigableMap<LocalDate, PriceHistoryRecord> history = ingredientPriceHistoryMap.get(ingId);
+            if (history != null && !history.isEmpty()) {
+                Map.Entry<LocalDate, PriceHistoryRecord> entry = history.floorEntry(asOfDate);
+                if (entry != null && entry.getValue() != null && entry.getValue().standardUnitPrice() != null) {
+                    adjustedList.add(new MenuIngredientCostVo(
+                            item.getIngredientId(),
+                            item.getIngredientName(),
+                            item.getIngredientCategory(),
+                            item.getIsPrimary(),
+                            item.getQuantity(),
+                            entry.getValue().standardUnitPrice(),
+                            entry.getKey(),
+                            item.getPriceSource(),
+                            item.getMappingType(),
+                            item.getConfidenceScore()
+                    ));
+                    continue;
+                }
+            }
+
+            // 시계열 이력이 없더라도 현재 item의 priceDate가 asOfDate보다 미래이면 asOfDate 이하로 클램핑
+            if (item.getPriceDate() != null && item.getPriceDate().isAfter(asOfDate)) {
+                adjustedList.add(new MenuIngredientCostVo(
+                        item.getIngredientId(),
+                        item.getIngredientName(),
+                        item.getIngredientCategory(),
+                        item.getIsPrimary(),
+                        item.getQuantity(),
+                        item.getStandardUnitPrice(),
+                        asOfDate,
+                        item.getPriceSource(),
+                        item.getMappingType(),
+                        item.getConfidenceScore()
+                ));
+            } else {
+                adjustedList.add(item);
+            }
+        }
+        return adjustedList;
+    }
+
+    private record PredictedPriceResult(BigDecimal price, LocalDate targetDate) {}
+
+    /**
+     * 식재료별 미래 예측 단가를 유연하게 조회한다. (COST-002 주간 예측 범위 보정)
+     * 1순위: 지정일자(lookupDate) 정확 일치 (Exact Match)
+     * 2순위: 지정일자가 속한 주차(월~일) 범위 내에 존재하는 AI 예측 단가
+     * 3순위: 지정일자 기준 전후 ±7일(1주간) 이내 가장 가까운 AI 예측 단가
+     */
+    private PredictedPriceResult findFlexiblePredictedPrice(Long ingredientId, LocalDate lookupDate) {
+        if (ingredientId == null || lookupDate == null) {
+            return null;
+        }
+
+        // 1순위: exact match
+        String exactKey = lookupDate + ":" + ingredientId;
+        BigDecimal exactPrice = predictedPriceMap.get(exactKey);
+        if (exactPrice != null && exactPrice.compareTo(BigDecimal.ZERO) > 0) {
+            return new PredictedPriceResult(exactPrice, lookupDate);
+        }
+
+        NavigableMap<LocalDate, BigDecimal> datesMap = ingredientPredictionsMap.get(ingredientId);
+        if (datesMap == null || datesMap.isEmpty()) {
+            return null;
+        }
+
+        // 2순위: lookupDate 이하 직전 예측 단가 우선 탐색 (타겟일자 범위 초과 미래일자 유입 방지)
+        Map.Entry<LocalDate, BigDecimal> lower = datesMap.floorEntry(lookupDate);
+        if (lower != null && lower.getValue() != null && lower.getValue().compareTo(BigDecimal.ZERO) > 0) {
+            long diff = Math.abs(ChronoUnit.DAYS.between(lower.getKey(), lookupDate));
+            if (diff <= 7) {
+                return new PredictedPriceResult(lower.getValue(), lower.getKey());
+            }
+        }
+
+        // 3순위: lookupDate가 속한 주차(월~일) 범위 내 예측 단가 탐색
+        LocalDate monday = lookupDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate sunday = monday.plusDays(6);
+        Map.Entry<LocalDate, BigDecimal> weekFloor = datesMap.floorEntry(sunday);
+        if (weekFloor != null && !weekFloor.getKey().isBefore(monday) && weekFloor.getValue() != null && weekFloor.getValue().compareTo(BigDecimal.ZERO) > 0) {
+            return new PredictedPriceResult(weekFloor.getValue(), weekFloor.getKey());
+        }
+
+        // 4순위: lookupDate 기준 전후 ±7일(1주) 이내 가장 가까운 예측 단가 탐색
+        Map.Entry<LocalDate, BigDecimal> higher = datesMap.ceilingEntry(lookupDate);
+        if (higher != null && higher.getValue() != null && higher.getValue().compareTo(BigDecimal.ZERO) > 0) {
+            long diff = Math.abs(ChronoUnit.DAYS.between(lookupDate, higher.getKey()));
+            if (diff <= 7) {
+                return new PredictedPriceResult(higher.getValue(), higher.getKey());
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * [DB 연결] 메뉴 ID 및 특정 미래 일자에 해당하는 예측 식재료 구성 및 단가 정보 목록 조회
      * - 최신 식재료 구성을 기반으로 예측 단가 맵을 결합하여 고속 산출 (0ms)
+     * - 주간 단위 AI 예측 특성을 고려하여 해당 주차 내 예측가 유연 매칭 지원
      */
     @Override
     public List<MenuIngredientCostVo> findPredictedIngredientsByMenuId(Long menuId, LocalDate targetDate) {
@@ -957,14 +1129,13 @@ public class MemoryCostRepository implements CostRepository {
         List<MenuIngredientCostVo> predictedList = new ArrayList<>();
         for (MenuIngredientCostVo item : baseItems) {
             Long ingredientId = item.getIngredientId();
-            String predKey = lookupDate + ":" + ingredientId;
-            BigDecimal predictedPrice = predictedPriceMap.get(predKey);
+            PredictedPriceResult predResult = findFlexiblePredictedPrice(ingredientId, lookupDate);
 
             BigDecimal finalUnitPrice;
             LocalDate finalPriceDate;
 
-            if (predictedPrice != null && predictedPrice.compareTo(BigDecimal.ZERO) > 0) {
-                finalUnitPrice = predictedPrice;
+            if (predResult != null && predResult.price() != null && predResult.price().compareTo(BigDecimal.ZERO) > 0) {
+                finalUnitPrice = predResult.price();
                 finalPriceDate = lookupDate;
             } else {
                 finalUnitPrice = item.getStandardUnitPrice();

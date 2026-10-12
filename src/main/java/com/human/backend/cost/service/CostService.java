@@ -67,11 +67,19 @@ public class CostService {
         return menuCostService.calculateCurrentMenuCost(menuId, mealCount, targetCost);
     }
 
+    public MenuCostResponse calculateCurrentMenuCost(Long menuId, Integer mealCount, BigDecimal targetCost, LocalDate baseDate) {
+        return menuCostService.calculateCurrentMenuCost(menuId, mealCount, targetCost, baseDate);
+    }
+
     /**
      * 등록된 모든 메뉴별 1인분 기준 현재 원가 일괄 산출 (COST-003)
      */
     public List<MenuCostResponse> calculateAllMenuCosts(Integer mealCount, BigDecimal targetCost) {
         return menuCostService.calculateAllMenuCosts(mealCount, targetCost);
+    }
+
+    public List<MenuCostResponse> calculateAllMenuCosts(Integer mealCount, BigDecimal targetCost, LocalDate baseDate) {
+        return menuCostService.calculateAllMenuCosts(mealCount, targetCost, baseDate);
     }
 
     /**
