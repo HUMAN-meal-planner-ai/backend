@@ -52,12 +52,18 @@ public class MenuReplacementCandidateResponse {
         private final BigDecimal impactScore;               // 영향도 점수 (정렬 기준)
 
         /**
-         * [응집도 향상] 변경 검토 후보 해당 여부 판정 (원가 급등 OR 가격 위험 OR 목표단가 초과)
+         * [응집도 향상] 변경 검토 후보 해당 여부 판정
+         * - 원가가 하락하거나 변동이 없는(increaseRate <= 0) 메뉴는 변경 검토 후보에서 제외
          */
         public static boolean isCandidate(BigDecimal increaseRate, String riskLevel,
                                           BigDecimal currentCost, BigDecimal futureCost,
                                           BigDecimal targetCost, BigDecimal surgeThresholdRate) {
-            boolean isCostSurge = increaseRate != null && surgeThresholdRate != null 
+            // 원가가 하락(음수)하거나 변동 없는 메뉴는 대체 추천 대상에서 제외
+            if (increaseRate == null || increaseRate.compareTo(BigDecimal.ZERO) <= 0) {
+                return false;
+            }
+
+            boolean isCostSurge = surgeThresholdRate != null 
                     && increaseRate.compareTo(surgeThresholdRate) >= 0;
             boolean isHighRisk = "WARNING".equalsIgnoreCase(riskLevel) || "CAUTION".equalsIgnoreCase(riskLevel);
             boolean isTargetCostExceeded = (futureCost != null && targetCost != null && futureCost.compareTo(targetCost) > 0)
