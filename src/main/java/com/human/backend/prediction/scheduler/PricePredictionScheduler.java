@@ -22,7 +22,7 @@ public class PricePredictionScheduler {
     }
 
     @Scheduled(
-            cron = "${price.prediction.schedule.cron:0 0 3 * * MON}",
+            cron = "${price.prediction.schedule.cron:0 0 11 * * MON}",
             zone = "${kamis.collection.schedule.zone:Asia/Seoul}")
     public void generateWeeklyPredictions() {
         Instant startedAt = Instant.now();
