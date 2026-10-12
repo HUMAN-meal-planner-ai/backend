@@ -23,6 +23,7 @@ public class YearOverYearBargainService {
 
     private static final int MAX_LIMIT = 12;
     private static final int PREVIOUS_YEAR_LOOKBACK_DAYS = 14;
+    private static final int CURRENT_FALLBACK_DAYS = 14;
     private final IngredientPriceRepository ingredientPriceRepository;
 
     public YearOverYearBargainService(IngredientPriceRepository ingredientPriceRepository) {
@@ -47,6 +48,38 @@ public class YearOverYearBargainService {
             return empty(asOfDate, null);
         }
 
+        YearOverYearBargainResponse primary = compare(asOfDate, comparisonDate, limit);
+        if (primary.itemCount() > 0) {
+            return primary;
+        }
+        // 가장 최근 날짜끼리는 수집된 시계열이 서로 달라 겹치는 항목이 없을 수 있습니다.
+        // (예: 전년도 추석 연휴처럼 일부 품목만 수집된 날, 또는 최근 일부만 수집된 날)
+        // 이 경우 비교 가능한 가장 가까운 날짜 조합으로 대체합니다.
+        YearOverYearBargainResponse fallback = findComparableResponse(asOfDate, limit);
+        return fallback != null ? fallback : primary;
+    }
+
+    private YearOverYearBargainResponse findComparableResponse(LocalDate latestDate, int limit) {
+        List<LocalDate> currentDates = ingredientPriceRepository.findPriceDatesBetweenDesc(
+                latestDate.minusDays(CURRENT_FALLBACK_DAYS), latestDate);
+        for (LocalDate currentDate : currentDates) {
+            LocalDate previousYear = currentDate.minusYears(1);
+            List<LocalDate> previousDates = ingredientPriceRepository.findPriceDatesBetweenDesc(
+                    previousYear.minusDays(PREVIOUS_YEAR_LOOKBACK_DAYS), previousYear);
+            for (LocalDate previousDate : previousDates) {
+                if (ingredientPriceRepository.countCheaperSeries(currentDate, previousDate) > 0) {
+                    YearOverYearBargainResponse response = compare(currentDate, previousDate, limit);
+                    if (response.itemCount() > 0) {
+                        return response;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private YearOverYearBargainResponse compare(
+            LocalDate asOfDate, LocalDate comparisonDate, int limit) {
         List<IngredientPrice> prices = ingredientPriceRepository
                 .findAllByPriceDateInOrderByIdDesc(List.of(asOfDate, comparisonDate));
         Map<Long, IngredientPrice> currentBySeries = pricesForDate(prices, asOfDate);

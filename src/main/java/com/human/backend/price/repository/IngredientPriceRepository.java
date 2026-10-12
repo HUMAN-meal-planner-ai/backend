@@ -39,4 +39,20 @@ public interface IngredientPriceRepository extends JpaRepository<IngredientPrice
      */
     @Query("SELECT MAX(price.collectedAt) FROM IngredientPrice price")
     Instant findLatestCollectedAt();
+    
+    /** 기간 안에 가격이 저장된 날짜를 최근순으로 반환합니다. */
+    @Query("SELECT DISTINCT price.priceDate FROM IngredientPrice price "
+            + "WHERE price.priceDate BETWEEN :startDate AND :endDate ORDER BY price.priceDate DESC")
+    List<LocalDate> findPriceDatesBetweenDesc(
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate);
+
+    /** 두 날짜에 모두 가격이 있고 현재 가격이 비교 가격보다 낮은 시계열 수를 반환합니다. */
+    @Query("SELECT COUNT(current) FROM IngredientPrice current, IngredientPrice previous "
+            + "WHERE current.series = previous.series "
+            + "AND current.priceDate = :currentDate AND previous.priceDate = :previousDate "
+            + "AND previous.originalPrice > 0 AND current.originalPrice < previous.originalPrice")
+    long countCheaperSeries(
+            @Param("currentDate") LocalDate currentDate,
+            @Param("previousDate") LocalDate previousDate);
 }
