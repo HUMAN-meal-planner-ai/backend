@@ -29,30 +29,36 @@ public class MenuService {
     public List<MenuResponse> findMenus(String slotText) {
         MenuSlot requestedSlot = parseSlot(slotText);
 
-        return costRepository.findAllMenuIds().stream()
-                .map(this::toResponse)
+        return menuRepository.getMenus().stream()
                 .filter(menu -> requestedSlot == null || menu.getSlot() == requestedSlot)
+                .map(this::withLatestIngredients)
                 .toList();
     }
 
-    /** 메뉴 ID 하나를 메뉴 기본 정보와 식재료 상세가 포함된 응답 DTO로 변환합니다. */
-    private MenuResponse toResponse(Long menuId) {
-        String menuName = costRepository.findMenuNameById(menuId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 메뉴 ID입니다. ID=" + menuId));
-
-        // 실제 카테고리 컬럼 연동 전까지 메뉴명으로 국·김치 여부를 임시 분류합니다.
-        String mainCategory = menuName.contains("찌개") || menuName.contains("국") ? "국" : "부찬";
-        String subCategory = menuName.contains("김치") ? "김치" : "일반";
-        MenuSlot slot = MenuSlot.from(mainCategory, subCategory);
-
+    /** 실제 메뉴 분류를 유지하면서 최신 원가 식재료 정보를 응답에 포함합니다. */
+    private MenuResponse withLatestIngredients(MenuResponse menu) {
         List<MenuResponse.IngredientResponse> ingredients = costRepository
-                .findLatestIngredientsByMenuId(menuId)
+                .findLatestIngredientsByMenuId(menu.getMenuId())
                 .stream()
                 .map(this::toIngredientResponse)
                 .toList();
 
-        return new MenuResponse(menuId, "MENU-" + menuId, menuName, mainCategory, subCategory,
-                slot, null, ingredients.size(), ingredients);
+        return MenuResponse.builder()
+                .menuId(menu.getMenuId())
+                .menuCode(menu.getMenuCode())
+                .menuName(menu.getMenuName())
+                .mainCategory(menu.getMainCategory())
+                .subCategory(menu.getSubCategory())
+                .slot(menu.getSlot())
+                .weight(menu.getWeight())
+                .energyKcal(menu.getEnergyKcal())
+                .proteinG(menu.getProteinG())
+                .fatG(menu.getFatG())
+                .carbohydrateG(menu.getCarbohydrateG())
+                .sodiumMg(menu.getSodiumMg())
+                .foodCount(menu.getFoodCount())
+                .ingredients(ingredients)
+                .build();
     }
 
     /** 원가 계산용 식재료 객체에서 메뉴 API에 공개할 필드만 골라 응답으로 변환합니다. */
