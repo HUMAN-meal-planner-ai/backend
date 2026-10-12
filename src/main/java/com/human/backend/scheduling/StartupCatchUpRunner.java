@@ -60,7 +60,7 @@ public class StartupCatchUpRunner {
             @Value("${app.catch-up.enabled:true}") boolean enabled,
             @Value("${app.catch-up.max-price-gap-days:90}") int maxPriceGapDays,
             @Value("${kamis.collection.schedule.cron:0 0 10 * * *}") String priceCron,
-            @Value("${price.prediction.schedule.cron:0 0 3 * * MON}") String predictionCron,
+            @Value("${price.prediction.schedule.cron:0 0 11 * * MON}") String predictionCron,
             @Value("${kamis.collection.schedule.zone:Asia/Seoul}") String zone) {
         this(priceRepository, predictionRepository, priceScheduler, predictionScheduler,
                 enabled, maxPriceGapDays, priceCron, predictionCron, zone, Clock.systemUTC());

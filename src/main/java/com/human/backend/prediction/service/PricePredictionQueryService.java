@@ -40,6 +40,11 @@ import com.human.backend.price.repository.PriceSeriesRepository.WeeklyRepresenta
 public class PricePredictionQueryService {
 
     static final double RISK_THRESHOLD = 0.75;
+    /**
+     * 위험 순위에 넣을 수 있는 예측 기준일의 허용 지연 일수입니다.
+     * 지원 시리즈 중 가장 최신 기준일보다 이 일수 넘게 오래된 시리즈는 해당 기간의 가격 데이터가 없는 것으로 보고 제외합니다.
+     */
+    static final int MAX_BASE_DATE_LAG_DAYS = 7;
     private static final int INCREASE_RATE_SCALE = 6;
     private static final BigDecimal STORED_PRICE_TOLERANCE = new BigDecimal("0.0000005");
 
@@ -203,10 +208,21 @@ public class PricePredictionQueryService {
                 .findWeeklyRepresentativePrices(supportedIds).stream()
                 .collect(Collectors.groupingBy(WeeklyRepresentativePrice::getSeriesId));
 
+        // 순위 기간의 기준일은 저장된 예측 중 가장 최신 기준일입니다.
+        // 가격 수집이 오래전에 멈춘 식재료의 옛 예측이 이번 기간 순위에 섞이지 않도록 걸러냅니다.
+        LocalDate rankingReferenceDate = storedBySeries.values().stream()
+                .map(StoredWeeklyPrediction::getBaseDate)
+                .max(Comparator.naturalOrder())
+                .orElse(null);
+
         List<AiWeeklyPriceSeriesRequest> requests = new ArrayList<>();
         for (Long seriesId : supportedIds) {
             StoredWeeklyPrediction stored = storedBySeries.get(seriesId);
             if (stored == null) {
+                continue;
+            }
+            if (stored.getBaseDate().isBefore(
+                    rankingReferenceDate.minusDays(MAX_BASE_DATE_LAG_DAYS))) {
                 continue;
             }
             List<WeeklyRepresentativePrice> history = historyBySeries
