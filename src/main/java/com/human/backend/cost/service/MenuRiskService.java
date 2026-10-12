@@ -240,7 +240,10 @@ public class MenuRiskService {
                     .build());
         }
 
-        CostDriverResponse.IngredientDriver topDriver = rankedDrivers.isEmpty() ? null : rankedDrivers.get(0);
+        CostDriverResponse.IngredientDriver topDriver = rankedDrivers.stream()
+                .filter(CostDriverResponse.IngredientDriver::isCostIncrease)
+                .findFirst()
+                .orElse(null);
 
         log.debug(">> [Cost Driver 분석] 메뉴: {} (ID: {}) | Top Driver: {}", current.getMenuName(), menuId,
                 topDriver != null ? topDriver.getIngredientName() : "없음");
