@@ -58,6 +58,71 @@ public class MealPlanRepository {
         );
     }
 
+    /**
+     * 특정 식단(planId)의 특정 메뉴(originalMenuId)를 대체 메뉴(replacementMenuId)로 교체합니다.
+     */
+    public int replacePlanItem(long planId, long originalMenuId, long replacementMenuId) {
+        return jdbcTemplate.update(
+                """
+                UPDATE mealfit.meal_plan_item
+                SET menu_id = ?
+                WHERE plan_id = ? AND menu_id = ?
+                """,
+                replacementMenuId,
+                planId,
+                originalMenuId
+        );
+    }
+
+    /**
+     * 시설의 특정 일자(targetDate) 식단 내 특정 메뉴를 대체 메뉴로 교체합니다.
+     */
+    public int replacePlanItemByDate(long facilityId, LocalDate targetDate, long originalMenuId, long replacementMenuId) {
+        return replacePlanItemsInRange(facilityId, targetDate, targetDate, originalMenuId, replacementMenuId);
+    }
+
+    /**
+     * 시설의 특정 주차/기간(startDate ~ endDate) 내 동일 메뉴를 대체 메뉴로 일괄 교체합니다.
+     */
+    public int replacePlanItemsInRange(long facilityId, LocalDate startDate, LocalDate endDate, long originalMenuId, long replacementMenuId) {
+        return jdbcTemplate.update(
+                """
+                UPDATE mealfit.meal_plan_item
+                SET menu_id = ?
+                WHERE menu_id = ?
+                  AND plan_id IN (
+                      SELECT plan_id FROM mealfit.meal_plan
+                      WHERE facility_id = ? AND plan_date BETWEEN ? AND ?
+                  )
+                """,
+                replacementMenuId,
+                originalMenuId,
+                facilityId,
+                startDate,
+                endDate
+        );
+    }
+
+    /**
+     * 시설의 전체 식단 내 특정 메뉴를 대체 메뉴로 교체합니다 (날짜 조건 누락 시 fallback).
+     */
+    public int replacePlanItemsByFacility(long facilityId, long originalMenuId, long replacementMenuId) {
+        return jdbcTemplate.update(
+                """
+                UPDATE mealfit.meal_plan_item
+                SET menu_id = ?
+                WHERE menu_id = ?
+                  AND plan_id IN (
+                      SELECT plan_id FROM mealfit.meal_plan
+                      WHERE facility_id = ?
+                  )
+                """,
+                replacementMenuId,
+                originalMenuId,
+                facilityId
+        );
+    }
+
     /** 식단 기본 정보를 저장하고 새로 만들어진 plan_id를 반환합니다. */
     public long insertPlan(long facilityId, long userId, LocalDate mealDate,
                             String mealType, int mealCount) {

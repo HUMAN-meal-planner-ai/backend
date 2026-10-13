@@ -1,6 +1,8 @@
 package com.human.backend.mealplan.controller;
 
+import com.human.backend.mealplan.dto.request.MealPlanReplaceRequest;
 import com.human.backend.mealplan.dto.request.MealPlanSaveRequest;
+import com.human.backend.mealplan.dto.response.MealPlanReplaceResponse;
 import com.human.backend.mealplan.dto.response.MealPlanResponse;
 import com.human.backend.mealplan.service.MealPlanService;
 import com.human.backend.auth.service.UserPrincipal;
@@ -51,5 +53,15 @@ public class MealPlanController {
         
         mealPlanService.deletePlanItem(planId, menuId, principal);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * [BUDG-005] 추천된 대체 메뉴를 식단에 교체 반영합니다.
+     */
+    @PostMapping("/replace-menu")
+    public ResponseEntity<MealPlanReplaceResponse> replaceMenu(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody MealPlanReplaceRequest request) {
+        return ResponseEntity.ok(mealPlanService.replaceMenu(request, principal));
     }
 }

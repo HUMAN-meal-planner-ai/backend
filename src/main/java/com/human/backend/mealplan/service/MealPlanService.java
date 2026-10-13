@@ -7,7 +7,9 @@ import com.human.backend.auth.entity.AppUser;
 import com.human.backend.auth.repository.AppUserRepository;
 import com.human.backend.auth.service.UserPrincipal;
 import com.human.backend.mealplan.dto.request.MealPlanItemRequest;
+import com.human.backend.mealplan.dto.request.MealPlanReplaceRequest;
 import com.human.backend.mealplan.dto.request.MealPlanSaveRequest;
+import com.human.backend.mealplan.dto.response.MealPlanReplaceResponse;
 import com.human.backend.mealplan.dto.response.MealPlanResponse;
 import com.human.backend.menu.domain.MenuSlot;
 import com.human.backend.mealplan.repository.MealPlanRepository;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -233,6 +236,56 @@ public class MealPlanService {
         mealPlanRepository.deletePlanItem(planId, menuId);
     }
 
-    
+    /**
+     * 식단 내 특정 메뉴를 추천된 대체 메뉴로 교체 반영합니다.
+     */
+    @Transactional
+    public MealPlanReplaceResponse replaceMenu(MealPlanReplaceRequest request, UserPrincipal principal) {
+        long facilityId = resolveFacilityId(principal, request.facilityId());
+        long originalMenuId = request.originalMenuId();
+        long replacementMenuId = request.replacementMenuId();
+
+        int count;
+        if (request.isSinglePlanReplacement()) {
+            // 1. 특정 끼니(planId) 지정 교체
+            count = mealPlanRepository.replacePlanItem(request.planId(), originalMenuId, replacementMenuId);
+        } else if (request.isBulkReplacement() && request.resolveWeekStartDate() != null) {
+            // 2. 주간 식단 범위 내 동일 메뉴 일괄 교체
+            count = mealPlanRepository.replacePlanItemsInRange(
+                    facilityId,
+                    request.resolveWeekStartDate(),
+                    request.resolveWeekEndDate(),
+                    originalMenuId,
+                    replacementMenuId
+            );
+        } else if (request.targetDate() != null) {
+            // 3. 특정 일자 끼니 내 교체 (없을 경우 시설 전체 탐색 fallback)
+            count = mealPlanRepository.replacePlanItemByDate(facilityId, request.targetDate(), originalMenuId, replacementMenuId);
+            if (count == 0) {
+                count = mealPlanRepository.replacePlanItemsByFacility(facilityId, originalMenuId, replacementMenuId);
+            }
+        } else {
+            // 4. 시설 식단 내 대상 메뉴 교체
+            count = mealPlanRepository.replacePlanItemsByFacility(facilityId, originalMenuId, replacementMenuId);
+        }
+
+        String message = count > 0
+                ? String.format("총 %d개의 식단 항목이 대체 메뉴로 성공적으로 변경되었습니다.", count)
+                : "교체 대상 메뉴가 현재 식단에서 발견되지 않았거나 이미 반영되었습니다.";
+
+        return new MealPlanReplaceResponse(count > 0, count, originalMenuId, replacementMenuId, message);
+    }
+
+    private long resolveFacilityId(UserPrincipal principal, Long fallbackFacilityId) {
+        if (principal != null) {
+            try {
+                AppUser user = findUser(principal);
+                if (user.getFacility() != null) {
+                    return user.getFacility().getId();
+                }
+            } catch (Exception ignored) {}
+        }
+        return fallbackFacilityId != null ? fallbackFacilityId : 1L;
+    }
 }
 
